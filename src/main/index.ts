@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { z } from 'zod'
+import icon from '../../resources/icon.png?asset'
 import { EVENT_CHANNEL } from '@shared/api'
 import { ACCOUNT_SPECS } from './agent-registry'
 import { ThreadDb } from './db'
@@ -26,6 +27,8 @@ function createWindow(): void {
     backgroundColor: '#fafafa',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
+    // Windows and Linux take the window icon; macOS shows the dock icon set on ready.
+    icon,
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -38,6 +41,8 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  // Unpackaged, the dock shows Electron's own icon until told otherwise.
+  app.dock?.setIcon(icon)
   const logDir = join(app.getPath('userData'), 'logs')
   mkdirSync(logDir, { recursive: true })
   const db = new ThreadDb(join(app.getPath('userData'), 'oniko.db'))

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { SquarePen } from "lucide-react"
+import logo from "@/assets/oniko.svg"
 
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
@@ -40,7 +41,10 @@ export function AppSidebar({
       <SidebarHeader className="drag pt-10">
         <SidebarMenu>
           <SidebarMenuItem className="px-2 pb-1">
-            <span className="text-base font-semibold tracking-tight">Oniko</span>
+            <span className="flex items-center gap-2">
+              <img src={logo} alt="" aria-hidden="true" className="size-5 rounded-[5px]" draggable={false} />
+              <span className="text-base font-semibold tracking-tight">Oniko</span>
+            </span>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onNew} className="no-drag" tooltip="New thread" data-testid="new-thread">
