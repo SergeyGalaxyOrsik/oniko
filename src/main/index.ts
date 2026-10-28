@@ -19,7 +19,7 @@ function createWindow(): void {
     height: 840,
     minWidth: 760,
     minHeight: 520,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#fafafa',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {

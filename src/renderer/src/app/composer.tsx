@@ -42,7 +42,7 @@ export function Composer({ busy, disabled = false, config, onSend, onStop, onCon
       placeholder="Ask for changes, send follow-ups…"
       minRows={2}
       maxRows={10}
-      className="bg-card shadow-[0_8px_30px_rgb(0_0_0/0.35)]"
+      className="bg-card shadow-sm"
       models={showAgentPicker ? AGENT_IDS.map((id) => ({ value: id, label: AGENTS[id].label, icon: <AgentGlyph agentId={id} /> })) : []}
       model={agent?.value}
       onModelChange={(id) => agent?.onChange(id as AgentId)}

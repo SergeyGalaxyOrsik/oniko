@@ -7,8 +7,8 @@ import type { Thread } from '@shared/thread'
 export function AuthCard({ thread, methods }: { thread: Thread; methods: AuthMethod[] }) {
   const label = AGENTS[thread.agentId].label
   return (
-    <div data-testid="auth-required" className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-      <div className="flex items-center gap-2 font-medium text-amber-300">
+    <div data-testid="auth-required" className="rounded-2xl border border-amber-500/40 bg-amber-50 p-4 text-sm">
+      <div className="flex items-center gap-2 font-medium text-amber-800">
         <KeyRound className="size-4" />
         {label} needs you to sign in
       </div>

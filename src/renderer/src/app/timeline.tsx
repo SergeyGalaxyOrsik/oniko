@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
 import { AgentActivity } from '@/components/agents/agent-activity'
 import { Message, MessageContent } from '@/components/agents/message'
-import { MessageBubble } from '@/components/agents/message-bubble'
+import { MessageBubble, MessageBubbleContent } from '@/components/agents/message-bubble'
 import { MessageScroller } from '@/components/agents/message-scroller'
 import { StreamingResponse } from '@/components/agents/streaming-response'
 import { TodoList, type TodoItemStatus } from '@/components/agents/todo-list'
@@ -82,7 +82,9 @@ function ItemView({ item, thread, streaming }: { item: Exclude<TimelineItem, { k
       return (
         <Message from="user">
           <MessageContent>
-            <MessageBubble className="max-w-[80%] whitespace-pre-wrap">{item.text}</MessageBubble>
+            <MessageBubble className="max-w-[80%]">
+              <MessageBubbleContent className="whitespace-pre-wrap">{item.text}</MessageBubbleContent>
+            </MessageBubble>
           </MessageContent>
         </Message>
       )
