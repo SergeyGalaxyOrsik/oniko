@@ -14,7 +14,7 @@ export function useThreads(): { threads: ThreadMap; loaded: boolean } {
     let snapshotSeq: number | null = null
     let buffered: SequencedEvent[] = []
     const apply = (events: SequencedEvent[]) =>
-      setState((s) => ({ ...s, threads: events.reduce((threads, e) => reduceThreads(threads, e.event), s.threads) }))
+      setState((s) => ({ ...s, threads: events.reduce((threads, e) => (e.event.type === 'subscriptions' ? threads : reduceThreads(threads, e.event)), s.threads) }))
     const unsubscribe = window.oniko.onEvent((sequenced) => {
       if (snapshotSeq === null) buffered.push(sequenced)
       else if (sequenced.seq > snapshotSeq) apply([sequenced])

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentId } from '@shared/agents'
-import type { SequencedEvent, ThreadSnapshot } from '@shared/api'
 import type { ThreadEvent, ThreadEventBody } from '@shared/events'
+import type { Subscription, SubscriptionId } from '@shared/subscriptions'
 import type { Thread, ThreadId, ThreadMap } from '@shared/thread'
 import { reduceThreads } from '@shared/thread-reducer'
 import { restoreThread } from '@shared/thread-restore'
@@ -13,37 +12,56 @@ export type ThreadStoreDeps = {
   db: ThreadDb
   logDir: string
   accountEnv: (thread: Thread) => EnvLayer
-  broadcast: (event: SequencedEvent) => void
+  publish: (event: ThreadEvent) => void
 }
 
 /** Authoritative thread state: every change is a reduced event, written through to the db, then broadcast. */
 export class ThreadStore {
   private threads: ThreadMap = {}
-  private seq = 0
   private readonly sessions = new Map<ThreadId, AgentSession>()
 
   constructor(private readonly deps: ThreadStoreDeps) {
     for (const stored of deps.db.loadThreads()) {
-      const restored = restoreThread(stored)
-      deps.db.saveChange(restored.id, stored, restored)
+      const restored = this.restore(stored)
       this.threads[restored.id] = restored
     }
+  }
+
+  /** Threads that predate subscriptions are stored without one and only load once they are adopted. */
+  loadAdopted(): void {
+    for (const stored of this.deps.db.loadThreads()) {
+      if (this.threads[stored.id]) continue
+      const restored = this.restore(stored)
+      this.dispatch({ threadId: restored.id, type: 'thread_created', thread: restored })
+    }
+  }
+
+  countUsing(subscriptionId: SubscriptionId): number {
+    return Object.values(this.threads).filter((t) => t.subscriptionId === subscriptionId).length
   }
 
   list(): Thread[] {
     return Object.values(this.threads).sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  snapshot(): ThreadSnapshot {
-    return { seq: this.seq, threads: this.list() }
-  }
-
-  create(agentId: AgentId, cwd: string): ThreadId {
+  create(subscription: Subscription, cwd: string): ThreadId {
     const id = randomUUID() as ThreadId
     this.dispatch({
       threadId: id,
       type: 'thread_created',
-      thread: { id, agentId, cwd, title: '', createdAt: Date.now(), acpSessionId: null, status: { kind: 'connecting' }, timeline: [], config: [], commands: [] },
+      thread: {
+        id,
+        agentId: subscription.agentId,
+        subscriptionId: subscription.id,
+        cwd,
+        title: '',
+        createdAt: Date.now(),
+        acpSessionId: null,
+        status: { kind: 'connecting' },
+        timeline: [],
+        config: [],
+        commands: [],
+      },
     })
     void this.session(id).ensureSession()
     return id
@@ -78,11 +96,16 @@ export class ThreadStore {
     this.sessions.clear()
   }
 
+  private restore(stored: Thread): Thread {
+    const restored = restoreThread(stored)
+    this.deps.db.saveChange(restored.id, stored, restored)
+    return restored
+  }
+
   private dispatch(event: ThreadEvent): void {
     const prev = this.threads[event.threadId]
     this.threads = reduceThreads(this.threads, event)
     this.deps.db.saveChange(event.threadId, prev, this.threads[event.threadId])
-    this.seq += 1
-    this.deps.broadcast({ seq: this.seq, event })
+    this.deps.publish(event)
   }
 }

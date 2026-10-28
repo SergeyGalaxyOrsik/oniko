@@ -55,7 +55,7 @@ function NewThread({ onCreated }: { onCreated: (id: ThreadId) => void }) {
 
   const send = async (text: string) => {
     if (!cwd) return
-    const id = await window.oniko.threads.create({ agentId, cwd })
+    const id = await window.oniko.threads.create({ cwd })
     onCreated(id)
     await window.oniko.threads.prompt(id, text)
   }

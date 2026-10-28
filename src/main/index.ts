@@ -6,7 +6,9 @@ import { z } from 'zod'
 import { EVENT_CHANNEL } from '@shared/api'
 import { ACCOUNT_SPECS } from './agent-registry'
 import { ThreadDb } from './db'
+import { EventBus } from './event-bus'
 import { registerIpc } from './ipc'
+import { SubscriptionStore } from './subscription-store'
 import { ThreadStore } from './thread-store'
 
 const userDataOverride = process.env['ONIKO_USER_DATA']
@@ -45,15 +47,31 @@ void app.whenReady().then(() => {
   }
   const smokeCwd = process.env['ONIKO_SMOKE_CWD']
   if (smokeCwd) rememberFolder(smokeCwd)
-  const store = new ThreadStore({
+  const bus = new EventBus((event) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send(EVENT_CHANNEL, event)
+  })
+  // The stores reference each other only through these late-bound callbacks.
+  let store: ThreadStore | undefined
+  const subscriptions = new SubscriptionStore({
+    db,
+    specs: ACCOUNT_SPECS,
+    publish: (event) => bus.publish(event),
+    threadsUsing: (id) => store?.countUsing(id) ?? 0,
+    onThreadsAdopted: () => store?.loadAdopted(),
+    seed: { agentId: 'claude', configDir: join(homedir(), '.claude') },
+  })
+  store = new ThreadStore({
     db,
     logDir,
-    accountEnv: (thread) => ACCOUNT_SPECS[thread.agentId].envFor(join(homedir(), '.claude')),
-    broadcast: (event) => {
-      for (const win of BrowserWindow.getAllWindows()) win.webContents.send(EVENT_CHANNEL, event)
+    accountEnv: (thread) => {
+      const sub = subscriptions.get(thread.subscriptionId)
+      if (!sub) throw new Error('This thread’s subscription was removed')
+      return ACCOUNT_SPECS[sub.agentId].envFor(sub.configDir)
     },
+    publish: (event) => bus.publish(event),
   })
-  registerIpc({ store, recentFolders, rememberFolder })
+  void subscriptions.refresh()
+  registerIpc({ bus, store, subscriptions, recentFolders, rememberFolder })
   app.on('before-quit', () => store.disposeAll())
   app.on('will-quit', () => db.close())
   createWindow()

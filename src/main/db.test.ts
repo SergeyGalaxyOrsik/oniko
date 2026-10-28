@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { Thread } from '@shared/thread'
 import { reduceThreads } from '@shared/thread-reducer'
 import { INTERRUPTED_NOTICE } from '@shared/thread-restore'
-import { chunk, newThread, threadId, update } from '@shared/test-fixtures'
+import { chunk, newThread, subscriptionId, threadId, update } from '@shared/test-fixtures'
 import { ThreadDb } from './db'
 import { ThreadStore } from './thread-store'
 
@@ -17,6 +17,13 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'oniko-db-'))
   path = join(dir, 'oniko.db')
 })
+
+/** Threads reference a subscription row, so each test db gets the fixture's. */
+function openDb(): ThreadDb {
+  const db = new ThreadDb(path)
+  db.saveSubscription({ id: subscriptionId, agentId: 'claude', label: 'Test', configDir: dir, createdAt: 1, account: { kind: 'unknown' } })
+  return db
+}
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 const sample: Thread = newThread({
@@ -33,7 +40,7 @@ const sample: Thread = newThread({
 
 describe('ThreadDb', () => {
   it('round-trips a thread across reopening the file', () => {
-    const db = new ThreadDb(path)
+    const db = openDb()
     db.saveChange(sample.id, undefined, sample)
     db.close()
     const reopened = new ThreadDb(path)
@@ -42,7 +49,7 @@ describe('ThreadDb', () => {
   })
 
   it('coalesces streaming chunks into one row per item', () => {
-    const db = new ThreadDb(path)
+    const db = openDb()
     let state = { [threadId]: newThread() }
     db.saveChange(threadId, undefined, state[threadId])
     for (const piece of ['ze', 'ph', 'yr']) {
@@ -55,7 +62,7 @@ describe('ThreadDb', () => {
   })
 
   it('deletes a removed thread with its items', () => {
-    const db = new ThreadDb(path)
+    const db = openDb()
     db.saveChange(sample.id, undefined, sample)
     db.saveChange(sample.id, sample, undefined)
     expect(db.loadThreads()).toEqual([])
@@ -64,7 +71,7 @@ describe('ThreadDb', () => {
 
   it('runs migrations once and keeps data when reopened', () => {
     new ThreadDb(path).close()
-    const db = new ThreadDb(path)
+    const db = openDb()
     db.setSetting('recentFolders', ['/a', '/b'])
     db.close()
     const again = new ThreadDb(path)
@@ -75,13 +82,13 @@ describe('ThreadDb', () => {
 
 describe('ThreadStore startup', () => {
   it('turns a thread interrupted mid-turn into a dormant thread with a notice, and persists that', () => {
-    const db = new ThreadDb(path)
+    const db = openDb()
     db.saveChange(sample.id, undefined, {
       ...sample,
       status: { kind: 'awaiting_permission', requestId: 'perm-1', startedAt: 1 },
       timeline: [...sample.timeline, { kind: 'permission', id: 'perm-1', toolCallId: 'tc', title: 'echo', options: [], outcome: null }],
     })
-    const store = new ThreadStore({ db, logDir: dir, accountEnv: () => ({}), broadcast: () => {} })
+    const store = new ThreadStore({ db, logDir: dir, accountEnv: () => ({}), publish: () => {} })
     const [thread] = store.list()
     expect(thread!.status).toEqual({ kind: 'dormant' })
     expect(thread!.timeline.slice(-2)).toMatchObject([

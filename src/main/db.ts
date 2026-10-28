@@ -1,10 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import { AGENT_IDS, type AgentId } from '@shared/agents'
+import type { AccountStatus, Subscription, SubscriptionId } from '@shared/subscriptions'
 import type { ConfigControl, Thread, ThreadId, ThreadStatus, TimelineItem } from '@shared/thread'
 
 /** Append-only. Each entry runs once, in order, tracked by PRAGMA user_version. */
-const MIGRATIONS = [
+export const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS threads (
      id TEXT PRIMARY KEY,
      agent_id TEXT NOT NULL,
@@ -29,17 +30,41 @@ const MIGRATIONS = [
      key TEXT PRIMARY KEY,
      value_json TEXT NOT NULL
    );`,
+  // Seeding and assigning existing threads needs the filesystem, so SubscriptionStore does it after this runs.
+  `CREATE TABLE IF NOT EXISTS subscriptions (
+     id TEXT PRIMARY KEY,
+     agent_id TEXT NOT NULL,
+     label TEXT NOT NULL,
+     config_dir TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     account_json TEXT NOT NULL,
+     UNIQUE (agent_id, config_dir)
+   );
+   ALTER TABLE threads ADD COLUMN subscription_id TEXT REFERENCES subscriptions(id);`,
 ]
+
+/** A subscription as stored: the login command is derived from the agent spec on load. */
+export type StoredSubscription = Omit<Subscription, 'loginCommand'>
 
 const threadRow = z.object({
   id: z.string(),
   agent_id: z.enum(AGENT_IDS as [AgentId, ...AgentId[]]),
+  subscription_id: z.string(),
   cwd: z.string(),
   title: z.string(),
   created_at: z.number(),
   acp_session_id: z.string().nullable(),
   config_json: z.string(),
   last_status: z.string(),
+})
+
+const subscriptionRow = z.object({
+  id: z.string(),
+  agent_id: z.enum(AGENT_IDS as [AgentId, ...AgentId[]]),
+  label: z.string(),
+  config_dir: z.string(),
+  created_at: z.number(),
+  account_json: z.string(),
 })
 
 const itemRow = z.object({ thread_id: z.string(), json: z.string() })
@@ -66,7 +91,8 @@ export class ThreadDb {
 
   /**
    * Rows are trusted as Oniko's own writes: scalar columns are checked, JSON payloads are not
-   * re-validated item by item.
+   * re-validated item by item. A thread without a subscription waits for the first one to be added
+   * (see assignOrphanThreads) and is not loaded until then.
    */
   loadThreads(): Thread[] {
     const items = new Map<string, TimelineItem[]>()
@@ -77,13 +103,14 @@ export class ThreadDb {
       items.set(row.thread_id, list)
     }
     return this.db
-      .prepare('SELECT * FROM threads ORDER BY created_at DESC')
+      .prepare('SELECT * FROM threads WHERE subscription_id IS NOT NULL ORDER BY created_at DESC')
       .all()
       .map((raw) => {
         const row = threadRow.parse(raw)
         return {
           id: row.id as ThreadId,
           agentId: row.agent_id,
+          subscriptionId: row.subscription_id as SubscriptionId,
           cwd: row.cwd,
           title: row.title,
           createdAt: row.created_at,
@@ -109,12 +136,12 @@ export class ThreadDb {
       }
       this.db
         .prepare(
-          `INSERT INTO threads (id, agent_id, cwd, title, created_at, updated_at, acp_session_id, config_json, last_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO threads (id, agent_id, subscription_id, cwd, title, created_at, updated_at, acp_session_id, config_json, last_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at,
              acp_session_id = excluded.acp_session_id, config_json = excluded.config_json, last_status = excluded.last_status`,
         )
-        .run(next.id, next.agentId, next.cwd, next.title, next.createdAt, Date.now(), next.acpSessionId, JSON.stringify(next.config), JSON.stringify(next.status))
+        .run(next.id, next.agentId, next.subscriptionId, next.cwd, next.title, next.createdAt, Date.now(), next.acpSessionId, JSON.stringify(next.config), JSON.stringify(next.status))
       const upsert = this.db.prepare(
         `INSERT INTO timeline_items (thread_id, seq, item_id, kind, json) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(thread_id, item_id) DO UPDATE SET seq = excluded.seq, kind = excluded.kind, json = excluded.json`,
@@ -123,6 +150,41 @@ export class ThreadDb {
         if (prev?.timeline[seq] !== item) upsert.run(next.id, seq, item.id, item.kind, JSON.stringify(item))
       })
     })
+  }
+
+  loadSubscriptions(): StoredSubscription[] {
+    return this.db
+      .prepare('SELECT * FROM subscriptions ORDER BY created_at')
+      .all()
+      .map((raw) => {
+        const row = subscriptionRow.parse(raw)
+        return {
+          id: row.id as SubscriptionId,
+          agentId: row.agent_id,
+          label: row.label,
+          configDir: row.config_dir,
+          createdAt: row.created_at,
+          account: JSON.parse(row.account_json) as AccountStatus,
+        }
+      })
+  }
+
+  saveSubscription(sub: StoredSubscription): void {
+    this.db
+      .prepare(
+        `INSERT INTO subscriptions (id, agent_id, label, config_dir, created_at, account_json) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET label = excluded.label, account_json = excluded.account_json`,
+      )
+      .run(sub.id, sub.agentId, sub.label, sub.configDir, sub.createdAt, JSON.stringify(sub.account))
+  }
+
+  deleteSubscription(id: SubscriptionId): void {
+    this.db.prepare('DELETE FROM subscriptions WHERE id = ?').run(id)
+  }
+
+  /** Gives every thread that predates subscriptions to this one; returns how many it adopted. */
+  assignOrphanThreads(id: SubscriptionId): number {
+    return Number(this.db.prepare('UPDATE threads SET subscription_id = ? WHERE subscription_id IS NULL').run(id).changes)
   }
 
   getSetting<T>(key: string, schema: z.ZodType<T>): T | null {

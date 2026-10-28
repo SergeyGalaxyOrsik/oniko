@@ -1,13 +1,16 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import type { ThreadEvent } from './events'
+import type { SubscriptionId } from './subscriptions'
 import type { Thread, ThreadId } from './thread'
 
 export const threadId = 't-1' as ThreadId
+export const subscriptionId = 'sub-1' as SubscriptionId
 
 export function newThread(overrides: Partial<Thread> = {}): Thread {
   return {
     id: threadId,
     agentId: 'claude',
+    subscriptionId,
     cwd: '/tmp/project',
     title: '',
     createdAt: 1_000,

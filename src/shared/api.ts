@@ -1,5 +1,5 @@
-import type { AgentId, AgentInfo } from './agents'
-import type { ThreadEvent } from './events'
+import type { AgentInfo } from './agents'
+import type { AppEvent } from './events'
 import type { Thread, ThreadId } from './thread'
 
 export const EVENT_CHANNEL = 'oniko:event'
@@ -8,14 +8,14 @@ export const EVENT_CHANNEL = 'oniko:event'
  * Every broadcast event carries the store's sequence number, and a snapshot records the last one
  * it includes, so a renderer can tell which events a snapshot already reflects.
  */
-export type SequencedEvent = { seq: number; event: ThreadEvent }
+export type SequencedEvent = { seq: number; event: AppEvent }
 export type ThreadSnapshot = { seq: number; threads: Thread[] }
 
 export type OnikoApi = {
   agents: { list(): Promise<AgentInfo[]> }
   threads: {
     list(): Promise<ThreadSnapshot>
-    create(input: { agentId: AgentId; cwd: string }): Promise<ThreadId>
+    create(input: { cwd: string }): Promise<ThreadId>
     prompt(id: ThreadId, text: string): Promise<void>
     cancel(id: ThreadId): Promise<void>
     setConfig(id: ThreadId, configId: string, value: string): Promise<void>

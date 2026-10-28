@@ -7,6 +7,7 @@ import type {
   ToolCallStatus,
 } from '@agentclientprotocol/sdk'
 import type { AgentId } from './agents'
+import type { SubscriptionId } from './subscriptions'
 
 export type ThreadId = string & { __brand: 'ThreadId' }
 
@@ -64,6 +65,8 @@ export type ConfigControl = {
 export type Thread = {
   id: ThreadId
   agentId: AgentId
+  /** Fixed at creation: the agent's transcript lives in this subscription's config dir, so resume only works there. */
+  subscriptionId: SubscriptionId
   cwd: string
   title: string
   createdAt: number
