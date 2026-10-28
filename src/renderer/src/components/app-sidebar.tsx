@@ -15,12 +15,16 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import type { SubscriptionsState } from "@shared/subscriptions"
+import type { TasksState } from "@shared/tasks"
 import type { Thread, ThreadId } from "@shared/thread"
 
 export function AppSidebar({
   threads,
   selectedId,
   onSelectThread,
+  tasks,
+  tasksProject,
+  onOpenTasks,
   onNew,
   settingsOpen,
   onOpenSettings,
@@ -30,6 +34,9 @@ export function AppSidebar({
   threads: Thread[]
   selectedId: ThreadId | null
   onSelectThread: (id: ThreadId) => void
+  tasks: TasksState
+  tasksProject: string | null
+  onOpenTasks: (project: string) => void
   onNew: () => void
   settingsOpen: boolean
   onOpenSettings: () => void
@@ -55,7 +62,15 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain threads={threads} subscriptions={subscriptions} selectedId={selectedId} onSelect={onSelectThread} />
+        <NavMain
+          threads={threads}
+          subscriptions={subscriptions}
+          selectedId={selectedId}
+          onSelect={onSelectThread}
+          tasks={tasks}
+          tasksProject={tasksProject}
+          onOpenTasks={onOpenTasks}
+        />
         <NavSecondary className="mt-auto" settingsOpen={settingsOpen} onOpenSettings={onOpenSettings} />
       </SidebarContent>
       <SidebarFooter>

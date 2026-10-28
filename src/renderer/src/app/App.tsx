@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Settings } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Settings } from 'lucide-react'
 import { AppSidebar } from '@/components/app-sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { AGENTS } from '@shared/agents'
 import { newThreadConfig, withValue } from '@shared/config'
 import { activeSubscription, type Subscription, type SubscriptionsState } from '@shared/subscriptions'
+import { projectTasks, taskKey, type TaskId, type TasksState } from '@shared/tasks'
 import { AgentGlyph } from './agent-glyph'
 import { isBusy, type Thread, type ThreadId } from '@shared/thread'
 import { AuthCard } from './auth-card'
@@ -18,6 +19,7 @@ import { Composer } from './composer'
 import { FolderPicker } from './folder-picker'
 import { basename } from './format'
 import { SettingsView } from './settings-view'
+import { TasksView } from './tasks-view'
 import { LoginHint } from './subscription-ui'
 import { LOCKED_HINT, SubscriptionPicker } from './subscription-picker'
 import { Timeline } from './timeline'
@@ -55,8 +57,8 @@ function ThreadView({ thread, subscriptions }: { thread: Thread; subscriptions: 
 }
 
 /** Where the inset card points. Settings remembers what it covered so Esc and Back return there. */
-type ChatView = { kind: 'new' } | { kind: 'thread'; id: ThreadId }
-type View = ChatView | { kind: 'settings'; back: ChatView }
+type MainView = { kind: 'new' } | { kind: 'thread'; id: ThreadId } | { kind: 'tasks'; project: string; taskId: TaskId | null }
+type View = MainView | { kind: 'settings'; back: MainView }
 
 function NoSubscription({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
@@ -145,17 +147,46 @@ function ThreadSubscriptionBadge({ subscription }: { subscription: Subscription 
   )
 }
 
+/** Linear's "3 / 12" with up and down: steps through the project's tasks in list order. */
+function TaskStepper({ tasks, project, taskId, onOpenTask }: { tasks: TasksState; project: string; taskId: TaskId; onOpenTask: (id: TaskId) => void }) {
+  const ordered = projectTasks(tasks, project)
+  const index = ordered.findIndex((t) => t.id === taskId)
+  if (index === -1) return null
+  const step = (by: number) => {
+    const next = ordered[index + by]
+    if (next) onOpenTask(next.id)
+  }
+  return (
+    <div className="no-drag ml-auto flex items-center gap-1 text-xs tabular-nums text-muted-foreground">
+      <span className="mr-1" data-testid="task-position">
+        {index + 1} / {ordered.length}
+      </span>
+      <Button variant="ghost" size="icon-xs" aria-label="Next task" disabled={index === ordered.length - 1} onClick={() => step(1)}>
+        <ArrowDown />
+      </Button>
+      <Button variant="ghost" size="icon-xs" aria-label="Previous task" disabled={index === 0} onClick={() => step(-1)}>
+        <ArrowUp />
+      </Button>
+    </div>
+  )
+}
+
 function InsetHeader({
   view,
   thread,
   subscriptions,
+  tasks,
   onBack,
+  onOpenTask,
 }: {
   view: View
   thread: Thread | undefined
   subscriptions: SubscriptionsState
+  tasks: TasksState
   onBack: () => void
+  onOpenTask: (project: string, id: TaskId | null) => void
 }) {
+  const openTask = view.kind === 'tasks' && view.taskId ? tasks.tasks.find((t) => t.id === view.taskId) : undefined
   const { state } = useSidebar()
   return (
     <header
@@ -175,6 +206,33 @@ function InsetHeader({
               <BreadcrumbItem>
                 <BreadcrumbPage>Subscriptions</BreadcrumbPage>
               </BreadcrumbItem>
+            </>
+          ) : view.kind === 'tasks' ? (
+            <>
+              <BreadcrumbItem>{basename(view.project)}</BreadcrumbItem>
+              <BreadcrumbSeparator />
+              {openTask ? (
+                <>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink asChild>
+                      <button type="button" className="no-drag" onClick={() => onOpenTask(view.project, null)} data-testid="tasks-crumb">
+                        Tasks
+                      </button>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem className="min-w-0">
+                    <BreadcrumbPage className="truncate">
+                      <span className="mr-1.5 text-muted-foreground">{taskKey(openTask)}</span>
+                      {openTask.title}
+                    </BreadcrumbPage>
+                  </BreadcrumbItem>
+                </>
+              ) : (
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Tasks</BreadcrumbPage>
+                </BreadcrumbItem>
+              )}
             </>
           ) : thread ? (
             <>
@@ -198,6 +256,8 @@ function InsetHeader({
           <ArrowLeft />
           Back
         </Button>
+      ) : view.kind === 'tasks' && openTask ? (
+        <TaskStepper tasks={tasks} project={view.project} taskId={openTask.id} onOpenTask={(id) => onOpenTask(view.project, id)} />
       ) : thread ? (
         <ThreadSubscriptionBadge subscription={subscriptions.subscriptions.find((s) => s.id === thread.subscriptionId)} />
       ) : null}
@@ -206,13 +266,15 @@ function InsetHeader({
 }
 
 export function App() {
-  const { threads, subscriptions, home } = useAppState()
+  const { threads, subscriptions, tasks, home } = useAppState()
   const [view, setView] = useState<View>({ kind: 'new' })
   const list = Object.values(threads).sort((a, b) => b.createdAt - a.createdAt)
-  const chat = view.kind === 'settings' ? view.back : view
-  const selected = chat.kind === 'thread' ? threads[chat.id] : undefined
+  const main = view.kind === 'settings' ? view.back : view
+  const selected = main.kind === 'thread' ? threads[main.id] : undefined
   const startNew = useCallback(() => setView({ kind: 'new' }), [])
   const selectThread = useCallback((id: ThreadId) => setView({ kind: 'thread', id }), [])
+  const openTasks = useCallback((project: string) => setView({ kind: 'tasks', project, taskId: null }), [])
+  const openTask = useCallback((project: string, taskId: TaskId | null) => setView({ kind: 'tasks', project, taskId }), [])
   const openSettings = useCallback(() => setView((v) => (v.kind === 'settings' ? v : { kind: 'settings', back: v })), [])
   const closeSettings = useCallback(() => setView((v) => (v.kind === 'settings' ? v.back : v)), [])
 
@@ -233,15 +295,20 @@ export function App() {
         threads={list}
         selectedId={view.kind === 'thread' ? view.id : null}
         onSelectThread={selectThread}
+        tasks={tasks}
+        tasksProject={view.kind === 'tasks' ? view.project : null}
+        onOpenTasks={openTasks}
         onNew={startNew}
         settingsOpen={view.kind === 'settings'}
         onOpenSettings={openSettings}
         subscriptions={subscriptions}
       />
       <SidebarInset className="min-h-0 overflow-hidden">
-        <InsetHeader view={view} thread={selected} subscriptions={subscriptions} onBack={closeSettings} />
+        <InsetHeader view={view} thread={selected} subscriptions={subscriptions} tasks={tasks} onBack={closeSettings} onOpenTask={openTask} />
         {view.kind === 'settings' ? (
           <SettingsView state={subscriptions} threads={list} home={home} />
+        ) : view.kind === 'tasks' ? (
+          <TasksView key={view.project} project={view.project} state={tasks} taskId={view.taskId} onOpenTask={(id) => openTask(view.project, id)} />
         ) : selected ? (
           <ThreadView key={selected.id} thread={selected} subscriptions={subscriptions} />
         ) : (
