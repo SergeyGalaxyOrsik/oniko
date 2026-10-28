@@ -1,0 +1,23 @@
+appId: site.orsik.oniko
+productName: Oniko
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+# The agent adapter and the Claude CLI are spawned as child processes, which cannot run from inside an asar.
+asarUnpack:
+  - node_modules/@agentclientprotocol/claude-agent-acp/**
+  - node_modules/@anthropic-ai/**
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+  category: public.app-category.developer-tools
+  icon: resources/icon.png
+  # No Developer ID yet: ad-hoc signature so Apple Silicon will launch it.
+  identity: '-'
+  hardenedRuntime: false
+dmg:
+  artifactName: ${productName}-${version}-${arch}.dmg
