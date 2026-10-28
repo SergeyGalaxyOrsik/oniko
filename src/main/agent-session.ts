@@ -83,11 +83,16 @@ export class AgentSession {
     this.acpSessionId = opts.acpSessionId
   }
 
+  /** After dispose the thread is gone or the app is quitting; late failures from the dying process must not reach the store. */
+  private emit(event: ThreadEventBody): void {
+    if (!this.disposed) this.opts.emit(event)
+  }
+
   /** Spawns and attaches once; concurrent callers share the same attempt. Resolves false when the thread cannot take a prompt. */
   ensureSession(): Promise<boolean> {
     this.ready ??= this.connect().catch((error: unknown) => {
       this.logLine(`connect failed: ${messageOf(error)}`)
-      this.opts.emit({ type: 'status', status: { kind: 'error', message: messageOf(error) } })
+      this.emit({ type: 'status', status: { kind: 'error', message: messageOf(error) } })
       this.ready = null
       return false
     })
@@ -95,7 +100,7 @@ export class AgentSession {
   }
 
   async prompt(text: string): Promise<void> {
-    this.opts.emit({ type: 'user_prompt', id: randomUUID(), text })
+    this.emit({ type: 'user_prompt', id: randomUUID(), text })
     if (!(await this.ensureSession())) {
       this.queuedPrompt = text
       return
@@ -117,9 +122,9 @@ export class AgentSession {
       this.config = replaced
         ? [...replaced, ...this.config.filter((c) => c.source !== 'config_option')]
         : withValue(this.config, configId, value)
-      this.opts.emit({ type: 'config', config: this.config })
+      this.emit({ type: 'config', config: this.config })
     } catch (error) {
-      this.opts.emit({ type: 'notice', level: 'error', text: `Could not change ${control.label}: ${messageOf(error)}` })
+      this.emit({ type: 'notice', level: 'error', text: `Could not change ${control.label}: ${messageOf(error)}` })
     }
   }
 
@@ -132,12 +137,12 @@ export class AgentSession {
     try {
       await this.conn.agent.request('authenticate', { methodId })
     } catch (error) {
-      this.opts.emit({ type: 'notice', level: 'error', text: `Authentication failed: ${messageOf(error)}` })
+      this.emit({ type: 'notice', level: 'error', text: `Authentication failed: ${messageOf(error)}` })
       return
     }
-    this.opts.emit({ type: 'status', status: { kind: 'connecting' } })
+    this.emit({ type: 'status', status: { kind: 'connecting' } })
     this.ready = this.attach().catch((error: unknown) => {
-      this.opts.emit({ type: 'status', status: { kind: 'error', message: messageOf(error) } })
+      this.emit({ type: 'status', status: { kind: 'error', message: messageOf(error) } })
       this.ready = null
       return false
     })
@@ -157,7 +162,7 @@ export class AgentSession {
   }
 
   private async connect(): Promise<boolean> {
-    this.opts.emit({ type: 'status', status: { kind: 'connecting' } })
+    this.emit({ type: 'status', status: { kind: 'connecting' } })
     const spec = SPAWN_SPECS[this.opts.agentId]()
     this.log ??= createWriteStream(this.opts.logPath, { flags: 'a' })
     const proc = spawn(spec.command, spec.args, {
@@ -174,7 +179,7 @@ export class AgentSession {
     this.conn = acp
       .client({ name: 'oniko' })
       .onNotification('session/update', ({ params }) => {
-        if (!this.suppressUpdates) this.opts.emit({ type: 'session_update', update: params.update })
+        if (!this.suppressUpdates) this.emit({ type: 'session_update', update: params.update })
       })
       .onRequest('session/request_permission', ({ params, signal }) => this.askPermission(params, signal))
       .connect(acp.ndJsonStream(Writable.toWeb(proc.stdin), Readable.toWeb(proc.stdout) as ReadableStream<Uint8Array>))
@@ -195,7 +200,7 @@ export class AgentSession {
       return true
     } catch (error) {
       if (!isAuthRequired(error)) throw error
-      this.opts.emit({ type: 'status', status: { kind: 'auth_required', methods: this.init?.authMethods ?? [] } })
+      this.emit({ type: 'status', status: { kind: 'auth_required', methods: this.init?.authMethods ?? [] } })
       return false
     }
   }
@@ -203,9 +208,9 @@ export class AgentSession {
   private attached(sessionId: string, setup: SessionSetup): void {
     this.acpSessionId = sessionId
     this.config = configFrom(setup)
-    this.opts.emit({ type: 'session_attached', acpSessionId: sessionId })
-    this.opts.emit({ type: 'config', config: this.config })
-    this.opts.emit({ type: 'status', status: { kind: 'idle' } })
+    this.emit({ type: 'session_attached', acpSessionId: sessionId })
+    this.emit({ type: 'config', config: this.config })
+    this.emit({ type: 'status', status: { kind: 'idle' } })
   }
 
   private async runTurn(text: string): Promise<void> {
@@ -214,33 +219,33 @@ export class AgentSession {
     if (!conn || !sessionId) return
     const startedAt = Date.now()
     this.turnStartedAt = startedAt
-    this.opts.emit({ type: 'status', status: { kind: 'running', startedAt } })
+    this.emit({ type: 'status', status: { kind: 'running', startedAt } })
     try {
       const res = await conn.agent.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] })
-      this.opts.emit({ type: 'turn_end', stopReason: res.stopReason, durationMs: Date.now() - startedAt })
+      this.emit({ type: 'turn_end', stopReason: res.stopReason, durationMs: Date.now() - startedAt })
     } catch (error) {
-      this.opts.emit({ type: 'notice', level: 'error', text: messageOf(error) })
+      this.emit({ type: 'notice', level: 'error', text: messageOf(error) })
     } finally {
       this.turnStartedAt = null
-      if (this.conn === conn) this.opts.emit({ type: 'status', status: { kind: 'idle' } })
+      if (this.conn === conn) this.emit({ type: 'status', status: { kind: 'idle' } })
     }
   }
 
   private askPermission(params: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse> {
     const requestId = randomUUID()
     const startedAt = this.turnStartedAt ?? Date.now()
-    this.opts.emit({ type: 'permission_request', requestId, toolCall: params.toolCall, options: params.options })
-    this.opts.emit({ type: 'status', status: { kind: 'awaiting_permission', requestId, startedAt } })
+    this.emit({ type: 'permission_request', requestId, toolCall: params.toolCall, options: params.options })
+    this.emit({ type: 'status', status: { kind: 'awaiting_permission', requestId, startedAt } })
     return new Promise((resolve) => {
       const settle = (outcome: acp.RequestPermissionOutcome) => {
         if (!this.pending.delete(requestId)) return
-        this.opts.emit({
+        this.emit({
           type: 'permission_resolved',
           requestId,
           outcome: outcome.outcome === 'selected' ? { optionId: outcome.optionId } : 'cancelled',
         })
-        if (this.turnStartedAt !== null && !this.disposed) {
-          this.opts.emit({ type: 'status', status: { kind: 'running', startedAt } })
+        if (this.turnStartedAt !== null) {
+          this.emit({ type: 'status', status: { kind: 'running', startedAt } })
         }
         resolve({ outcome })
       }
@@ -257,7 +262,7 @@ export class AgentSession {
     this.conn = null
     this.proc = null
     this.ready = null
-    if (!this.disposed) this.opts.emit({ type: 'status', status: { kind: 'exited', code } })
+    this.emit({ type: 'status', status: { kind: 'exited', code } })
   }
 
   private logLine(line: string): void {

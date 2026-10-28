@@ -1,20 +1,17 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
+import { z } from 'zod'
 import { EVENT_CHANNEL } from '@shared/api'
+import { ThreadDb } from './db'
 import { registerIpc } from './ipc'
 import { ThreadStore } from './thread-store'
 
 const userDataOverride = process.env['ONIKO_USER_DATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
 
+const RECENT_KEY = 'recentFolders'
 const RECENT_LIMIT = 8
-let recent: string[] = []
-const rememberFolder = (path: string) => {
-  recent = [path, ...recent.filter((p) => p !== path)].slice(0, RECENT_LIMIT)
-}
-const smokeCwd = process.env['ONIKO_SMOKE_CWD']
-if (smokeCwd) rememberFolder(smokeCwd)
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -39,14 +36,23 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   const logDir = join(app.getPath('userData'), 'logs')
   mkdirSync(logDir, { recursive: true })
+  const db = new ThreadDb(join(app.getPath('userData'), 'oniko.db'))
+  const recentFolders = () => db.getSetting(RECENT_KEY, z.array(z.string())) ?? []
+  const rememberFolder = (path: string) => {
+    db.setSetting(RECENT_KEY, [path, ...recentFolders().filter((p) => p !== path)].slice(0, RECENT_LIMIT))
+  }
+  const smokeCwd = process.env['ONIKO_SMOKE_CWD']
+  if (smokeCwd) rememberFolder(smokeCwd)
   const store = new ThreadStore({
+    db,
     logDir,
     broadcast: (event) => {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send(EVENT_CHANNEL, event)
     },
   })
-  registerIpc({ store, recentFolders: () => recent, rememberFolder })
+  registerIpc({ store, recentFolders, rememberFolder })
   app.on('before-quit', () => store.disposeAll())
+  app.on('will-quit', () => db.close())
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

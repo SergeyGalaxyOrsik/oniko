@@ -3,19 +3,28 @@ import type { AgentId } from '@shared/agents'
 import type { ThreadEvent, ThreadEventBody } from '@shared/events'
 import type { Thread, ThreadId, ThreadMap } from '@shared/thread'
 import { reduceThreads } from '@shared/thread-reducer'
+import { restoreThread } from '@shared/thread-restore'
 import { AgentSession, logPathFor } from './agent-session'
+import type { ThreadDb } from './db'
 
 export type ThreadStoreDeps = {
+  db: ThreadDb
   logDir: string
   broadcast: (event: ThreadEvent) => void
 }
 
-/** Authoritative thread state: every change is a reduced event, then broadcast unchanged to renderers. */
+/** Authoritative thread state: every change is a reduced event, written through to the db, then broadcast. */
 export class ThreadStore {
   private threads: ThreadMap = {}
   private readonly sessions = new Map<ThreadId, AgentSession>()
 
-  constructor(private readonly deps: ThreadStoreDeps) {}
+  constructor(private readonly deps: ThreadStoreDeps) {
+    for (const stored of deps.db.loadThreads()) {
+      const restored = restoreThread(stored)
+      deps.db.saveChange(restored.id, stored, restored)
+      this.threads[restored.id] = restored
+    }
+  }
 
   list(): Thread[] {
     return Object.values(this.threads).sort((a, b) => b.createdAt - a.createdAt)
@@ -61,7 +70,9 @@ export class ThreadStore {
   }
 
   private dispatch(event: ThreadEvent): void {
+    const prev = this.threads[event.threadId]
     this.threads = reduceThreads(this.threads, event)
+    this.deps.db.saveChange(event.threadId, prev, this.threads[event.threadId])
     this.deps.broadcast(event)
   }
 }
