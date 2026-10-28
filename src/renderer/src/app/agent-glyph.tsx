@@ -1,9 +1,10 @@
-import { Asterisk, type LucideIcon } from 'lucide-react'
+import type { ComponentType, SVGProps } from 'react'
+import { ClaudeIcon } from '@/components/icons/claude'
 import { cn } from '@/lib/utils'
 import type { AgentId } from '@shared/agents'
 
-const GLYPHS: Record<AgentId, { icon: LucideIcon; className: string }> = {
-  claude: { icon: Asterisk, className: 'text-[#d97757]' },
+const GLYPHS: Record<AgentId, { icon: ComponentType<SVGProps<SVGSVGElement>>; className: string }> = {
+  claude: { icon: ClaudeIcon, className: 'text-[#d97757]' },
 }
 
 export function AgentGlyph({ agentId, className }: { agentId: AgentId; className?: string }) {
