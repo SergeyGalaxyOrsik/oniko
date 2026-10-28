@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ArrowLeft, Settings } from 'lucide-react'
 import { AppSidebar } from '@/components/app-sidebar'
+import { Button } from '@/components/ui/button'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
-import { AGENT_IDS, AGENTS, type AgentId } from '@shared/agents'
+import { AGENTS } from '@shared/agents'
+import { activeSubscription, type SubscriptionsState } from '@shared/subscriptions'
 import { isBusy, type Thread, type ThreadId } from '@shared/thread'
 import { AuthCard } from './auth-card'
 import { Composer } from './composer'
 import { FolderPicker } from './folder-picker'
 import { basename } from './format'
+import { SettingsView } from './settings-view'
 import { Timeline } from './timeline'
 import { useAppState } from './use-app-state'
 
@@ -41,10 +45,34 @@ function ThreadView({ thread }: { thread: Thread }) {
   )
 }
 
-function NewThread({ onCreated }: { onCreated: (id: ThreadId) => void }) {
+/** Where the inset card points. Settings remembers what it covered so Esc and Back return there. */
+type ChatView = { kind: 'new' } | { kind: 'thread'; id: ThreadId }
+type View = ChatView | { kind: 'settings'; back: ChatView }
+
+function NoSubscription({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div data-testid="no-subscription" className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/40 p-4 text-sm">
+      <span>Add a subscription in Settings to start a thread.</span>
+      <Button size="sm" variant="outline" onClick={onOpenSettings}>
+        <Settings />
+        Open Settings
+      </Button>
+    </div>
+  )
+}
+
+function NewThread({
+  subscriptions,
+  onCreated,
+  onOpenSettings,
+}: {
+  subscriptions: SubscriptionsState
+  onCreated: (id: ThreadId) => void
+  onOpenSettings: () => void
+}) {
   const [recent, setRecent] = useState<string[]>([])
   const [cwd, setCwd] = useState<string | null>(null)
-  const [agentId, setAgentId] = useState<AgentId>(AGENT_IDS[0]!)
+  const active = activeSubscription(subscriptions)
 
   useEffect(() => {
     void window.oniko.folders.recent().then((list) => {
@@ -54,8 +82,8 @@ function NewThread({ onCreated }: { onCreated: (id: ThreadId) => void }) {
   }, [])
 
   const send = async (text: string) => {
-    if (!cwd) return
-    const id = await window.oniko.threads.create({ cwd })
+    if (!cwd || !active) return
+    const id = await window.oniko.threads.create({ cwd, subscriptionId: active.id })
     onCreated(id)
     await window.oniko.threads.prompt(id, text)
   }
@@ -66,22 +94,22 @@ function NewThread({ onCreated }: { onCreated: (id: ThreadId) => void }) {
         What should we build in <FolderPicker cwd={cwd} recent={recent} onPick={setCwd} />?
       </h1>
       <p className="mt-2 max-w-3xl truncate text-sm text-muted-foreground">{cwd ? cwd : 'Pick a project folder to start'}</p>
-      <div className="mt-8 w-full max-w-3xl">
+      <div className="mt-8 w-full max-w-3xl space-y-3">
+        {active ? null : <NoSubscription onOpenSettings={onOpenSettings} />}
         <Composer
           busy={false}
-          disabled={!cwd}
+          disabled={!cwd || !active}
           config={[]}
           onSend={(text) => void send(text)}
           onStop={() => {}}
           onConfig={() => {}}
-          agent={{ value: agentId, onChange: setAgentId }}
         />
       </div>
     </div>
   )
 }
 
-function InsetHeader({ thread }: { thread: Thread | undefined }) {
+function InsetHeader({ view, thread, onBack }: { view: View; thread: Thread | undefined; onBack: () => void }) {
   const { state } = useSidebar()
   return (
     <header
@@ -94,7 +122,15 @@ function InsetHeader({ thread }: { thread: Thread | undefined }) {
       <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
       <Breadcrumb className="min-w-0">
         <BreadcrumbList className="flex-nowrap">
-          {thread ? (
+          {view.kind === 'settings' ? (
+            <>
+              <BreadcrumbItem>Settings</BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Subscriptions</BreadcrumbPage>
+              </BreadcrumbItem>
+            </>
+          ) : thread ? (
             <>
               <BreadcrumbItem>{basename(thread.cwd)}</BreadcrumbItem>
               <BreadcrumbSeparator />
@@ -111,24 +147,59 @@ function InsetHeader({ thread }: { thread: Thread | undefined }) {
           )}
         </BreadcrumbList>
       </Breadcrumb>
-      {thread ? <span className="ml-auto shrink-0 text-xs text-muted-foreground">{AGENTS[thread.agentId].label}</span> : null}
+      {view.kind === 'settings' ? (
+        <Button variant="ghost" size="sm" className="no-drag ml-auto" onClick={onBack} data-testid="settings-back">
+          <ArrowLeft />
+          Back
+        </Button>
+      ) : thread ? (
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{AGENTS[thread.agentId].label}</span>
+      ) : null}
     </header>
   )
 }
 
 export function App() {
-  const { threads } = useAppState()
-  const [selectedId, setSelectedId] = useState<ThreadId | null>(null)
+  const { threads, subscriptions, home } = useAppState()
+  const [view, setView] = useState<View>({ kind: 'new' })
   const list = Object.values(threads).sort((a, b) => b.createdAt - a.createdAt)
-  const selected = selectedId ? threads[selectedId] : undefined
-  const startNew = useCallback(() => setSelectedId(null), [])
+  const chat = view.kind === 'settings' ? view.back : view
+  const selected = chat.kind === 'thread' ? threads[chat.id] : undefined
+  const startNew = useCallback(() => setView({ kind: 'new' }), [])
+  const selectThread = useCallback((id: ThreadId) => setView({ kind: 'thread', id }), [])
+  const openSettings = useCallback(() => setView((v) => (v.kind === 'settings' ? v : { kind: 'settings', back: v })), [])
+  const closeSettings = useCallback(() => setView((v) => (v.kind === 'settings' ? v.back : v)), [])
+
+  useEffect(() => {
+    if (view.kind !== 'settings') return
+    const onKey = (e: KeyboardEvent) => {
+      // Esc inside an open dialog or menu closes that layer, not the page under it.
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"]')) return
+      closeSettings()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view.kind, closeSettings])
 
   return (
     <SidebarProvider className="h-full min-h-0">
-      <AppSidebar threads={list} selectedId={selectedId} onSelectThread={setSelectedId} onNew={startNew} />
+      <AppSidebar
+        threads={list}
+        selectedId={view.kind === 'thread' ? view.id : null}
+        onSelectThread={selectThread}
+        onNew={startNew}
+        settingsOpen={view.kind === 'settings'}
+        onOpenSettings={openSettings}
+      />
       <SidebarInset className="min-h-0 overflow-hidden">
-        <InsetHeader thread={selected} />
-        {selected ? <ThreadView key={selected.id} thread={selected} /> : <NewThread onCreated={setSelectedId} />}
+        <InsetHeader view={view} thread={selected} onBack={closeSettings} />
+        {view.kind === 'settings' ? (
+          <SettingsView state={subscriptions} threads={list} home={home} />
+        ) : selected ? (
+          <ThreadView key={selected.id} thread={selected} />
+        ) : (
+          <NewThread subscriptions={subscriptions} onCreated={selectThread} onOpenSettings={openSettings} />
+        )}
       </SidebarInset>
     </SidebarProvider>
   )

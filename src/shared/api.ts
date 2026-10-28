@@ -10,7 +10,8 @@ export const EVENT_CHANNEL = 'oniko:event'
  * it includes, so a renderer can tell which events a snapshot already reflects.
  */
 export type SequencedEvent = { seq: number; event: AppEvent }
-export type AppSnapshot = { seq: number; threads: Thread[]; subscriptions: SubscriptionsState }
+/** `home` lets the renderer shorten paths to `~`; a sandboxed renderer cannot ask the OS. */
+export type AppSnapshot = { seq: number; home: string; threads: Thread[]; subscriptions: SubscriptionsState }
 
 export type OnikoApi = {
   snapshot(): Promise<AppSnapshot>

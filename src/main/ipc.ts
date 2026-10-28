@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron'
 import { z } from 'zod'
 import { AGENT_IDS, AGENTS, type AgentId } from '@shared/agents'
@@ -32,7 +33,12 @@ export function registerIpc({ bus, store, subscriptions, recentFolders, remember
     ipcMain.handle(channel, (_event, ...raw: unknown[]) => fn(...schema.parse(raw)))
   }
 
-  handle(CHANNELS.snapshot, z.tuple([]), (): AppSnapshot => ({ seq: bus.seq, threads: store.list(), subscriptions: subscriptions.state() }))
+  handle(CHANNELS.snapshot, z.tuple([]), (): AppSnapshot => ({
+    seq: bus.seq,
+    home: homedir(),
+    threads: store.list(),
+    subscriptions: subscriptions.state(),
+  }))
   handle(CHANNELS.agentsList, z.tuple([]), () => Object.values(AGENTS))
   handle(
     CHANNELS.threadsCreate,

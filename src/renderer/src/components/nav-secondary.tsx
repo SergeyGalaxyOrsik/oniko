@@ -5,22 +5,24 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-export function NavSecondary(props: React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
+export function NavSecondary({
+  settingsOpen,
+  onOpenSettings,
+  ...props
+}: { settingsOpen: boolean; onOpenSettings: () => void } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
   return (
     <SidebarGroup {...props}>
       <SidebarGroupContent>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="sm" disabled aria-disabled="true" tooltip="Settings are coming soon">
+            <SidebarMenuButton size="sm" tooltip="Settings" isActive={settingsOpen} onClick={onOpenSettings} data-testid="open-settings">
               <Settings />
               <span>Settings</span>
             </SidebarMenuButton>
-            <SidebarMenuBadge className="text-[10px] font-normal text-muted-foreground">Soon</SidebarMenuBadge>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroupContent>

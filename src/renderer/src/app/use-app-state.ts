@@ -7,13 +7,16 @@ import type { ThreadMap } from '@shared/thread'
  * Mirrors main's state with the same reducer. Events are buffered until the snapshot lands,
  * then only those newer than the snapshot are applied, since IPC replies and pushes are not ordered.
  */
-export function useAppState(): AppState & { loaded: boolean } {
-  const [state, setState] = useState<AppState & { loaded: boolean }>({ threads: {}, subscriptions: EMPTY_SUBSCRIPTIONS, loaded: false })
+type MirroredState = AppState & { home: string; loaded: boolean }
+
+export function useAppState(): MirroredState {
+  const [state, setState] = useState<MirroredState>({ threads: {}, subscriptions: EMPTY_SUBSCRIPTIONS, home: '', loaded: false })
 
   useEffect(() => {
     let snapshotSeq: number | null = null
     let buffered: SequencedEvent[] = []
-    const apply = (events: SequencedEvent[]) => setState((s) => ({ ...events.reduce((app, e) => reduceApp(app, e.event), s as AppState), loaded: s.loaded }))
+    const apply = (events: SequencedEvent[]) =>
+      setState((s) => ({ ...s, ...events.reduce<AppState>((app, e) => reduceApp(app, e.event), s) }))
     const unsubscribe = window.oniko.onEvent((sequenced) => {
       if (snapshotSeq === null) buffered.push(sequenced)
       else if (sequenced.seq > snapshotSeq) apply([sequenced])
@@ -23,6 +26,7 @@ export function useAppState(): AppState & { loaded: boolean } {
       setState({
         threads: Object.fromEntries(snapshot.threads.map((t) => [t.id, t])) as ThreadMap,
         subscriptions: snapshot.subscriptions,
+        home: snapshot.home,
         loaded: true,
       })
       apply(buffered.filter((e) => e.seq > snapshot.seq))

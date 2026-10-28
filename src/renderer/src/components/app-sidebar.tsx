@@ -21,12 +21,16 @@ export function AppSidebar({
   selectedId,
   onSelectThread,
   onNew,
+  settingsOpen,
+  onOpenSettings,
   ...props
 }: {
   threads: Thread[]
   selectedId: ThreadId | null
   onSelectThread: (id: ThreadId) => void
   onNew: () => void
+  settingsOpen: boolean
+  onOpenSettings: () => void
 } & React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar variant="inset" {...props}>
@@ -46,7 +50,7 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <NavMain threads={threads} selectedId={selectedId} onSelect={onSelectThread} />
-        <NavSecondary className="mt-auto" />
+        <NavSecondary className="mt-auto" settingsOpen={settingsOpen} onOpenSettings={onOpenSettings} />
       </SidebarContent>
       <SidebarFooter>
         {AGENT_IDS.map((id) => (
