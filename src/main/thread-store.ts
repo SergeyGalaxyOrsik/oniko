@@ -44,7 +44,7 @@ export class ThreadStore {
     return Object.values(this.threads).sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  create(subscription: Subscription, cwd: string): ThreadId {
+  create(subscription: Subscription, cwd: string, initialConfig?: Record<string, string>): ThreadId {
     const id = randomUUID() as ThreadId
     this.dispatch({
       threadId: id,
@@ -63,12 +63,12 @@ export class ThreadStore {
         commands: [],
       },
     })
-    void this.session(id).ensureSession()
+    void this.session(id, initialConfig).ensureSession()
     return id
   }
 
   /** Sessions are created lazily, so a thread without a live process gets one on first use. */
-  session(id: ThreadId): AgentSession {
+  session(id: ThreadId, initialConfig?: Record<string, string>): AgentSession {
     const existing = this.sessions.get(id)
     if (existing) return existing
     const thread = this.threads[id]
@@ -78,6 +78,7 @@ export class ThreadStore {
       cwd: thread.cwd,
       accountEnv: this.deps.accountEnv(thread),
       acpSessionId: thread.acpSessionId,
+      ...(initialConfig ? { initialConfig } : {}),
       logPath: logPathFor(this.deps.logDir, id),
       emit: (event: ThreadEventBody) => this.dispatch({ ...event, threadId: id }),
     })

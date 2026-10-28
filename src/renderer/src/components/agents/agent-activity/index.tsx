@@ -152,7 +152,8 @@ export function AgentActivity({
     ? getContentType(items)
     : (initialContentType ?? "mixed");
   const cappedHeight = Math.min(contentHeight, Math.max(0, maxHeight));
-  const viewportHeight = working ? Math.max(0, maxHeight) : cappedHeight;
+  // Sized to the rows (capped), working or not: a fixed working box left a blank gap under a few rows.
+  const viewportHeight = cappedHeight;
   const capped = contentHeight > maxHeight;
   const streamOffset = working
     ? Math.min(0, viewportHeight - contentHeight)
@@ -203,11 +204,12 @@ export function AgentActivity({
         <div
           id={triggerId}
           role="status"
-          className="flex h-7 min-w-0 items-center text-muted-foreground"
+          className="flex h-7 min-w-0 items-center overflow-hidden text-muted-foreground"
         >
+          {/* One line: a long shell command as the label used to wrap out of the h-7 row onto the list. */}
           {renderWorkingStatus
             ? renderWorkingStatus({ label: liveLabel, duration })
-            : <ThinkingShimmer>{liveLabel}</ThinkingShimmer>}
+            : <ThinkingShimmer className="block min-w-0 truncate">{liveLabel}</ThinkingShimmer>}
         </div>
       ) : (
         <button
@@ -257,10 +259,10 @@ export function AgentActivity({
             transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
             className={cn("space-y-0.5 py-2", contentClassName)}
           >
-            <AnimatePresence mode="popLayout">
+            {/* No layout animation: rows that grow or collapse (tool output) made springing siblings overlap. */}
+            <AnimatePresence initial={false}>
               {items.map((item) => (
                 <motion.div
-                  layout="position"
                   key={item.id}
                   role="listitem"
                   initial={reduce ? { opacity: 1 } : { opacity: 0, y: 6 }}
@@ -272,7 +274,6 @@ export function AgentActivity({
                       : {
                           opacity: { duration: 0.18, ease: EASE_OUT },
                           y: SPRING_LAYOUT,
-                          layout: SPRING_LAYOUT,
                         }
                   }
                 >

@@ -18,7 +18,8 @@ export type OnikoApi = {
   agents: { list(): Promise<AgentInfo[]> }
   threads: {
     /** Starts on the active subscription unless one is given. */
-    create(input: { cwd: string; subscriptionId?: SubscriptionId }): Promise<ThreadId>
+    /** `config` holds values picked before the session exists, keyed by config id. */
+    create(input: { cwd: string; subscriptionId?: SubscriptionId; config?: Record<string, string> }): Promise<ThreadId>
     prompt(id: ThreadId, text: string): Promise<void>
     cancel(id: ThreadId): Promise<void>
     setConfig(id: ThreadId, configId: string, value: string): Promise<void>

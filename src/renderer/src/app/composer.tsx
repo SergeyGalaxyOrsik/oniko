@@ -45,7 +45,7 @@ export function Composer({ busy, disabled = false, config, onSend, onStop, onCon
         <>
           {leading}
           {config.map((control) => (
-            <ConfigSelect key={control.id} control={control} disabled={busy} onChange={(value) => onConfig(control.id, value)} />
+            <ConfigSelect key={control.id} control={control} disabled={disabled} onChange={(value) => onConfig(control.id, value)} />
           ))}
         </>
       }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Settings } from 'lucide-react'
 import { AppSidebar } from '@/components/app-sidebar'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/com
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { AGENTS } from '@shared/agents'
+import { newThreadConfig, withValue } from '@shared/config'
 import { activeSubscription, type Subscription, type SubscriptionsState } from '@shared/subscriptions'
 import { AgentGlyph } from './agent-glyph'
 import { isBusy, type Thread, type ThreadId } from '@shared/thread'
@@ -71,10 +72,12 @@ function NoSubscription({ onOpenSettings }: { onOpenSettings: () => void }) {
 
 function NewThread({
   subscriptions,
+  threads,
   onCreated,
   onOpenSettings,
 }: {
   subscriptions: SubscriptionsState
+  threads: Thread[]
   onCreated: (id: ThreadId) => void
   onOpenSettings: () => void
 }) {
@@ -89,9 +92,18 @@ function NewThread({
     })
   }, [])
 
+  // Picks made before the session exists; the template's own values fill whatever was not touched.
+  const [picked, setPicked] = useState<Record<string, string>>({})
+  const template = useMemo(() => (active ? newThreadConfig(threads, active.agentId, active.id) : []), [threads, active])
+  const config = template.reduce((acc, c) => {
+    const value = picked[c.id]
+    return value && c.options.some((o) => o.value === value) ? withValue(acc, c.id, value) : acc
+  }, template)
+
   const send = async (text: string) => {
     if (!cwd || !active) return
-    const id = await window.oniko.threads.create({ cwd, subscriptionId: active.id })
+    const values = Object.fromEntries(config.map((c) => [c.id, c.value]))
+    const id = await window.oniko.threads.create({ cwd, subscriptionId: active.id, config: values })
     onCreated(id)
     await window.oniko.threads.prompt(id, text)
   }
@@ -108,10 +120,10 @@ function NewThread({
           busy={false}
           disabled={!cwd || !active}
           leading={<SubscriptionPicker subscriptions={subscriptions.subscriptions} current={active} readOnly={false} />}
-          config={[]}
+          config={config}
           onSend={(text) => void send(text)}
           onStop={() => {}}
-          onConfig={() => {}}
+          onConfig={(configId, value) => setPicked((p) => ({ ...p, [configId]: value }))}
         />
       </div>
     </div>
@@ -233,7 +245,7 @@ export function App() {
         ) : selected ? (
           <ThreadView key={selected.id} thread={selected} subscriptions={subscriptions} />
         ) : (
-          <NewThread subscriptions={subscriptions} onCreated={selectThread} onOpenSettings={openSettings} />
+          <NewThread subscriptions={subscriptions} threads={list} onCreated={selectThread} onOpenSettings={openSettings} />
         )}
       </SidebarInset>
     </SidebarProvider>

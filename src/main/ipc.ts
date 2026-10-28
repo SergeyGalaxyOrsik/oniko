@@ -42,12 +42,12 @@ export function registerIpc({ bus, store, subscriptions, recentFolders, remember
   handle(CHANNELS.agentsList, z.tuple([]), () => Object.values(AGENTS))
   handle(
     CHANNELS.threadsCreate,
-    z.tuple([z.object({ cwd: z.string().min(1), subscriptionId: subscriptionId.optional() })]),
-    ({ cwd, subscriptionId }) => {
+    z.tuple([z.object({ cwd: z.string().min(1), subscriptionId: subscriptionId.optional(), config: z.record(z.string(), z.string()).optional() })]),
+    ({ cwd, subscriptionId, config }) => {
       const subscription = subscriptionId ? subscriptions.get(subscriptionId) : subscriptions.active()
       if (!subscription) throw new Error('Add a subscription in Settings')
       rememberFolder(cwd)
-      return store.create(subscription, cwd)
+      return store.create(subscription, cwd, config)
     },
   )
   handle(CHANNELS.threadsPrompt, z.tuple([threadId, z.string().min(1)]), (id, text) => store.session(id).prompt(text))

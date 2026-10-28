@@ -1,5 +1,7 @@
 import type { SessionConfigOption, SessionModeState } from '@agentclientprotocol/sdk'
-import type { ConfigControl } from './thread'
+import type { AgentId } from './agents'
+import type { SubscriptionId } from './subscriptions'
+import type { ConfigControl, Thread } from './thread'
 
 /** The pre-configOptions `models` field some adapters (Codex) still return from session/new. */
 export type LegacyModelState = {
@@ -61,4 +63,13 @@ export function normalizeConfig(input: {
 
 export function withValue(config: ConfigControl[], id: string, value: string): ConfigControl[] {
   return config.map((c) => (c.id === id ? { ...c, value } : c))
+}
+
+/**
+ * Controls for a thread that has no session yet: the newest thread on the same subscription, else
+ * on the same agent, carrying its last values. Empty until that agent has run once.
+ */
+export function newThreadConfig(threads: Pick<Thread, 'agentId' | 'subscriptionId' | 'createdAt' | 'config'>[], agentId: AgentId, subscriptionId: SubscriptionId): ConfigControl[] {
+  const known = threads.filter((t) => t.agentId === agentId && t.config.length > 0).sort((a, b) => b.createdAt - a.createdAt)
+  return (known.find((t) => t.subscriptionId === subscriptionId) ?? known[0])?.config ?? []
 }

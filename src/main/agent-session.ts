@@ -63,6 +63,8 @@ export type AgentSessionOptions = {
   /** The subscription's env (CLAUDE_CONFIG_DIR set or unset), applied last so nothing inherited survives it. */
   accountEnv: EnvLayer
   acpSessionId: string | null
+  /** Values picked in the new-thread composer, applied once right after session/new and before the first prompt. */
+  initialConfig?: Record<string, string>
   logPath: string
   emit: (event: ThreadEventBody) => void
 }
@@ -118,6 +120,10 @@ export class AgentSession {
 
   async setConfig(configId: string, value: string): Promise<void> {
     if (!(await this.ensureSession())) return
+    await this.writeConfig(configId, value)
+  }
+
+  private async writeConfig(configId: string, value: string): Promise<void> {
     const control = this.config.find((c) => c.id === configId)
     if (!control || !this.conn || !this.acpSessionId) return
     try {
@@ -128,6 +134,14 @@ export class AgentSession {
       this.emit({ type: 'config', config: this.config })
     } catch (error) {
       this.emit({ type: 'notice', level: 'error', text: `Could not change ${control.label}: ${messageOf(error)}` })
+    }
+  }
+
+  /** One at a time and in order: a mode change can replace the other config options. */
+  private async applyInitialConfig(): Promise<void> {
+    for (const [configId, value] of Object.entries(this.opts.initialConfig ?? {})) {
+      const control = this.config.find((c) => c.id === configId)
+      if (control && control.value !== value && control.options.some((o) => o.value === value)) await this.writeConfig(configId, value)
     }
   }
 
@@ -208,6 +222,7 @@ export class AgentSession {
       }
       const res = await conn.agent.request('session/new', { cwd: this.opts.cwd, mcpServers: [] })
       this.attached(res.sessionId, res)
+      if (!previous) await this.applyInitialConfig()
       if (previous) this.emit({ type: 'notice', level: 'info', text: FRESH_SESSION_NOTICE })
       return true
     } catch (error) {
