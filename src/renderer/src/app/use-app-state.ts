@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { EMPTY_SUBSCRIPTIONS, reduceApp, type AppState } from '@shared/app-reducer'
 import type { SequencedEvent } from '@shared/api'
+import { EMPTY_TASKS } from '@shared/tasks'
 import type { ThreadMap } from '@shared/thread'
 
 /**
@@ -10,7 +11,7 @@ import type { ThreadMap } from '@shared/thread'
 type MirroredState = AppState & { home: string; loaded: boolean }
 
 export function useAppState(): MirroredState {
-  const [state, setState] = useState<MirroredState>({ threads: {}, subscriptions: EMPTY_SUBSCRIPTIONS, home: '', loaded: false })
+  const [state, setState] = useState<MirroredState>({ threads: {}, subscriptions: EMPTY_SUBSCRIPTIONS, tasks: EMPTY_TASKS, home: '', loaded: false })
 
   useEffect(() => {
     let snapshotSeq: number | null = null
@@ -26,6 +27,7 @@ export function useAppState(): MirroredState {
       setState({
         threads: Object.fromEntries(snapshot.threads.map((t) => [t.id, t])) as ThreadMap,
         subscriptions: snapshot.subscriptions,
+        tasks: snapshot.tasks,
         home: snapshot.home,
         loaded: true,
       })

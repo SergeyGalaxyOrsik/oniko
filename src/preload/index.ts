@@ -27,6 +27,16 @@ const api: OnikoApi = {
     setActive: call(CHANNELS.subscriptionsSetActive),
     detect: call(CHANNELS.subscriptionsDetect),
   },
+  tasks: {
+    open: call(CHANNELS.tasksOpen),
+    create: call(CHANNELS.tasksCreate),
+    update: call(CHANNELS.tasksUpdate),
+    move: call(CHANNELS.tasksMove),
+    remove: call(CHANNELS.tasksRemove),
+    addStatus: call(CHANNELS.tasksAddStatus),
+    updateStatus: call(CHANNELS.tasksUpdateStatus),
+    removeStatus: call(CHANNELS.tasksRemoveStatus),
+  },
   folders: { recent: call(CHANNELS.foldersRecent) },
   dialog: { pickFolder: call(CHANNELS.dialogPickFolder) },
   onEvent(cb) {

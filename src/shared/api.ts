@@ -1,6 +1,7 @@
 import type { AgentId, AgentInfo } from './agents'
 import type { AppEvent } from './events'
 import type { AddSubscriptionResult, SubscriptionId, SubscriptionsState } from './subscriptions'
+import type { StatusKind, TaskId, TasksState, TaskStatusId } from './tasks'
 import type { Thread, ThreadId } from './thread'
 
 export const EVENT_CHANNEL = 'oniko:event'
@@ -11,7 +12,7 @@ export const EVENT_CHANNEL = 'oniko:event'
  */
 export type SequencedEvent = { seq: number; event: AppEvent }
 /** `home` lets the renderer shorten paths to `~`; a sandboxed renderer cannot ask the OS. */
-export type AppSnapshot = { seq: number; home: string; threads: Thread[]; subscriptions: SubscriptionsState }
+export type AppSnapshot = { seq: number; home: string; threads: Thread[]; subscriptions: SubscriptionsState; tasks: TasksState }
 
 export type OnikoApi = {
   snapshot(): Promise<AppSnapshot>
@@ -37,6 +38,19 @@ export type OnikoApi = {
     /** Config dirs that look like Claude subscriptions and are not added yet. */
     detect(): Promise<string[]>
   }
+  tasks: {
+    /** Seeds the default statuses for a project that has none yet. */
+    open(project: string): Promise<void>
+    create(input: { project: string; title: string; description: string; statusId: TaskStatusId }): Promise<TaskId>
+    update(id: TaskId, patch: { title?: string; description?: string }): Promise<void>
+    /** Places the task in `statusId` ahead of `beforeId`, or last when it is null. */
+    move(id: TaskId, statusId: TaskStatusId, beforeId: TaskId | null): Promise<void>
+    remove(id: TaskId): Promise<void>
+    addStatus(project: string, name: string): Promise<TaskStatusId>
+    updateStatus(id: TaskStatusId, patch: { name?: string; kind?: StatusKind }): Promise<void>
+    /** Its tasks move to the project's first remaining status. */
+    removeStatus(id: TaskStatusId): Promise<void>
+  }
   folders: { recent(): Promise<string[]> }
   dialog: { pickFolder(options?: { showHidden?: boolean }): Promise<string | null> }
   onEvent(cb: (event: SequencedEvent) => void): () => void
@@ -60,6 +74,14 @@ export const CHANNELS = {
   subscriptionsRefresh: 'subscriptions:refresh',
   subscriptionsSetActive: 'subscriptions:setActive',
   subscriptionsDetect: 'subscriptions:detect',
+  tasksOpen: 'tasks:open',
+  tasksCreate: 'tasks:create',
+  tasksUpdate: 'tasks:update',
+  tasksMove: 'tasks:move',
+  tasksRemove: 'tasks:remove',
+  tasksAddStatus: 'tasks:addStatus',
+  tasksUpdateStatus: 'tasks:updateStatus',
+  tasksRemoveStatus: 'tasks:removeStatus',
   foldersRecent: 'folders:recent',
   dialogPickFolder: 'dialog:pickFolder',
 } as const

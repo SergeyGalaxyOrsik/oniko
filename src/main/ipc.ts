@@ -4,9 +4,11 @@ import { z } from 'zod'
 import { AGENT_IDS, AGENTS, type AgentId } from '@shared/agents'
 import { CHANNELS, type AppSnapshot } from '@shared/api'
 import type { SubscriptionId } from '@shared/subscriptions'
+import { STATUS_KINDS, type TaskId, type TaskStatusId } from '@shared/tasks'
 import type { ThreadId } from '@shared/thread'
 import type { EventBus } from './event-bus'
 import type { SubscriptionStore } from './subscription-store'
+import type { TaskStore } from './task-store'
 import type { ThreadStore } from './thread-store'
 
 const threadId = z
@@ -17,18 +19,28 @@ const subscriptionId = z
   .string()
   .min(1)
   .transform((s) => s as SubscriptionId)
+const taskId = z
+  .string()
+  .min(1)
+  .transform((s) => s as TaskId)
+const taskStatusId = z
+  .string()
+  .min(1)
+  .transform((s) => s as TaskStatusId)
+const project = z.string().min(1)
 const agentId = z.enum(AGENT_IDS as [AgentId, ...AgentId[]])
 
 export type IpcDeps = {
   bus: EventBus
   store: ThreadStore
   subscriptions: SubscriptionStore
+  tasks: TaskStore
   recentFolders: () => string[]
   rememberFolder: (path: string) => void
 }
 
 /** The renderer is untrusted input: every payload is parsed here and nowhere downstream. */
-export function registerIpc({ bus, store, subscriptions, recentFolders, rememberFolder }: IpcDeps): void {
+export function registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder }: IpcDeps): void {
   const handle = <S extends z.ZodTuple>(channel: string, schema: S, fn: (...args: z.infer<S>) => unknown) => {
     ipcMain.handle(channel, (_event, ...raw: unknown[]) => fn(...schema.parse(raw)))
   }
@@ -38,6 +50,7 @@ export function registerIpc({ bus, store, subscriptions, recentFolders, remember
     home: homedir(),
     threads: store.list(),
     subscriptions: subscriptions.state(),
+    tasks: tasks.state(),
   }))
   handle(CHANNELS.agentsList, z.tuple([]), () => Object.values(AGENTS))
   handle(
@@ -74,6 +87,29 @@ export function registerIpc({ bus, store, subscriptions, recentFolders, remember
   handle(CHANNELS.subscriptionsRefresh, z.tuple([subscriptionId.optional()]), (id) => subscriptions.refresh(id))
   handle(CHANNELS.subscriptionsSetActive, z.tuple([subscriptionId]), (id) => subscriptions.setActive(id))
   handle(CHANNELS.subscriptionsDetect, z.tuple([]), () => subscriptions.detect())
+
+  handle(CHANNELS.tasksOpen, z.tuple([project]), (p) => tasks.open(p))
+  handle(
+    CHANNELS.tasksCreate,
+    z.tuple([z.object({ project, title: z.string(), description: z.string(), statusId: taskStatusId })]),
+    (input) => tasks.create(input),
+  )
+  handle(CHANNELS.tasksUpdate, z.tuple([taskId, z.object({ title: z.string().optional(), description: z.string().optional() })]), (id, patch) =>
+    tasks.update(id, {
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+    }),
+  )
+  handle(CHANNELS.tasksMove, z.tuple([taskId, taskStatusId, taskId.nullable()]), (id, statusId, beforeId) => tasks.move(id, statusId, beforeId))
+  handle(CHANNELS.tasksRemove, z.tuple([taskId]), (id) => tasks.remove(id))
+  handle(CHANNELS.tasksAddStatus, z.tuple([project, z.string()]), (p, name) => tasks.addStatus(p, name))
+  handle(CHANNELS.tasksUpdateStatus, z.tuple([taskStatusId, z.object({ name: z.string().optional(), kind: z.enum(STATUS_KINDS).optional() })]), (id, patch) =>
+    tasks.updateStatus(id, {
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
+    }),
+  )
+  handle(CHANNELS.tasksRemoveStatus, z.tuple([taskStatusId]), (id) => tasks.removeStatus(id))
 
   handle(CHANNELS.foldersRecent, z.tuple([]), () => recentFolders())
   handle(CHANNELS.dialogPickFolder, z.tuple([z.object({ showHidden: z.boolean().optional() }).optional()]), async (options) => {

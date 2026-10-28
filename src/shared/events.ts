@@ -1,5 +1,6 @@
 import type { PermissionOption, SessionUpdate, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { SubscriptionsState } from './subscriptions'
+import type { TasksState } from './tasks'
 import type { ConfigControl, PermissionOutcome, Thread, ThreadId, ThreadStatus } from './thread'
 
 export type ThreadEventBody =
@@ -21,4 +22,7 @@ export type ThreadEventType = ThreadEvent['type']
 /** Subscriptions are app-wide, so their event carries the whole replacement state instead of a thread id. */
 export type SubscriptionsEvent = { type: 'subscriptions'; state: SubscriptionsState }
 
-export type AppEvent = ThreadEvent | SubscriptionsEvent
+/** Tasks are small and edited one at a time, so they also travel as a whole replacement. */
+export type TasksEvent = { type: 'tasks'; state: TasksState }
+
+export type AppEvent = ThreadEvent | SubscriptionsEvent | TasksEvent

@@ -10,6 +10,7 @@ import { ThreadDb } from './db'
 import { EventBus } from './event-bus'
 import { registerIpc } from './ipc'
 import { SubscriptionStore } from './subscription-store'
+import { TaskStore } from './task-store'
 import { ThreadStore } from './thread-store'
 
 const userDataOverride = process.env['ONIKO_USER_DATA']
@@ -75,8 +76,9 @@ void app.whenReady().then(() => {
     },
     publish: (event) => bus.publish(event),
   })
+  const tasks = new TaskStore({ db, publish: (event) => bus.publish(event) })
   void subscriptions.refresh()
-  registerIpc({ bus, store, subscriptions, recentFolders, rememberFolder })
+  registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder })
   app.on('before-quit', () => store.disposeAll())
   app.on('will-quit', () => db.close())
   createWindow()

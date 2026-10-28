@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import { AGENT_IDS, type AgentId } from '@shared/agents'
 import type { AccountStatus, Subscription, SubscriptionId } from '@shared/subscriptions'
+import { STATUS_COLORS, STATUS_KINDS, type Task, type TaskId, type TaskStatus, type TaskStatusId } from '@shared/tasks'
 import type { ConfigControl, Thread, ThreadId, ThreadStatus, TimelineItem } from '@shared/thread'
 
 /** Append-only. Each entry runs once, in order, tracked by PRAGMA user_version. */
@@ -41,6 +42,33 @@ export const MIGRATIONS = [
      UNIQUE (agent_id, config_dir)
    );
    ALTER TABLE threads ADD COLUMN subscription_id TEXT REFERENCES subscriptions(id);`,
+  // Default statuses are seeded per project when its board is first opened, see TaskStore.
+  `CREATE TABLE IF NOT EXISTS task_statuses (
+     id TEXT PRIMARY KEY,
+     project TEXT NOT NULL,
+     name TEXT NOT NULL,
+     color TEXT NOT NULL,
+     position REAL NOT NULL
+   );
+   CREATE TABLE IF NOT EXISTS tasks (
+     id TEXT PRIMARY KEY,
+     project TEXT NOT NULL,
+     title TEXT NOT NULL,
+     description TEXT NOT NULL,
+     status_id TEXT NOT NULL REFERENCES task_statuses(id),
+     position REAL NOT NULL,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status_id, position);`,
+  // Numbers existing tasks per project in creation order; statuses named like the defaults get their kind.
+  `ALTER TABLE task_statuses ADD COLUMN kind TEXT NOT NULL DEFAULT 'started';
+   UPDATE task_statuses SET kind = CASE name WHEN 'Backlog' THEN 'backlog' WHEN 'To do' THEN 'unstarted' WHEN 'Done' THEN 'completed' ELSE 'started' END;
+   ALTER TABLE tasks ADD COLUMN number INTEGER NOT NULL DEFAULT 0;
+   UPDATE tasks SET number = (
+     SELECT COUNT(*) FROM tasks AS t
+     WHERE t.project = tasks.project AND (t.created_at < tasks.created_at OR (t.created_at = tasks.created_at AND t.id <= tasks.id))
+   );`,
 ]
 
 /** A subscription as stored: the login command is derived from the agent spec on load. */
@@ -65,6 +93,27 @@ const subscriptionRow = z.object({
   config_dir: z.string(),
   created_at: z.number(),
   account_json: z.string(),
+})
+
+const taskStatusRow = z.object({
+  id: z.string(),
+  project: z.string(),
+  name: z.string(),
+  color: z.enum(STATUS_COLORS),
+  kind: z.enum(STATUS_KINDS),
+  position: z.number(),
+})
+
+const taskRow = z.object({
+  id: z.string(),
+  project: z.string(),
+  number: z.number(),
+  title: z.string(),
+  description: z.string(),
+  status_id: z.string(),
+  position: z.number(),
+  created_at: z.number(),
+  updated_at: z.number(),
 })
 
 const itemRow = z.object({ thread_id: z.string(), json: z.string() })
@@ -185,6 +234,74 @@ export class ThreadDb {
   /** Gives every thread that predates subscriptions to this one; returns how many it adopted. */
   assignOrphanThreads(id: SubscriptionId): number {
     return Number(this.db.prepare('UPDATE threads SET subscription_id = ? WHERE subscription_id IS NULL').run(id).changes)
+  }
+
+  loadTaskStatuses(): TaskStatus[] {
+    return this.db
+      .prepare('SELECT * FROM task_statuses ORDER BY project, position')
+      .all()
+      .map((raw) => {
+        const row = taskStatusRow.parse(raw)
+        return { id: row.id as TaskStatusId, project: row.project, name: row.name, color: row.color, kind: row.kind, position: row.position }
+      })
+  }
+
+  saveTaskStatus(status: TaskStatus): void {
+    this.db
+      .prepare(
+        `INSERT INTO task_statuses (id, project, name, color, kind, position) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, color = excluded.color, kind = excluded.kind, position = excluded.position`,
+      )
+      .run(status.id, status.project, status.name, status.color, status.kind, status.position)
+  }
+
+  /** Moves the status's tasks to the end of `fallback`, keeping their order, then drops the status. */
+  deleteTaskStatus(id: TaskStatusId, fallback: TaskStatusId): void {
+    this.transaction(() => {
+      const { last } = z
+        .object({ last: z.number().nullable() })
+        .parse(this.db.prepare('SELECT MAX(position) AS last FROM tasks WHERE status_id = ?').get(fallback))
+      const { first } = z
+        .object({ first: z.number().nullable() })
+        .parse(this.db.prepare('SELECT MIN(position) AS first FROM tasks WHERE status_id = ?').get(id))
+      const shift = last === null || first === null ? 0 : last - first + 1
+      this.db.prepare('UPDATE tasks SET status_id = ?, position = position + ? WHERE status_id = ?').run(fallback, shift, id)
+      this.db.prepare('DELETE FROM task_statuses WHERE id = ?').run(id)
+    })
+  }
+
+  loadTasks(): Task[] {
+    return this.db
+      .prepare('SELECT * FROM tasks ORDER BY project, position')
+      .all()
+      .map((raw) => {
+        const row = taskRow.parse(raw)
+        return {
+          id: row.id as TaskId,
+          project: row.project,
+          number: row.number,
+          title: row.title,
+          description: row.description,
+          statusId: row.status_id as TaskStatusId,
+          position: row.position,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }
+      })
+  }
+
+  saveTask(task: Task): void {
+    this.db
+      .prepare(
+        `INSERT INTO tasks (id, project, number, title, description, status_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET title = excluded.title, description = excluded.description, status_id = excluded.status_id,
+           position = excluded.position, updated_at = excluded.updated_at`,
+      )
+      .run(task.id, task.project, task.number, task.title, task.description, task.statusId, task.position, task.createdAt, task.updatedAt)
+  }
+
+  deleteTask(id: TaskId): void {
+    this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
   }
 
   getSetting<T>(key: string, schema: z.ZodType<T>): T | null {

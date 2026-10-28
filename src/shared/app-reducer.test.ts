@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_SUBSCRIPTIONS, reduceApp, type AppState } from './app-reducer'
 import type { Subscription, SubscriptionsState } from './subscriptions'
+import { EMPTY_TASKS } from './tasks'
 import { chunk, newThread, subscriptionId, threadId, update } from './test-fixtures'
 
 const sub: Subscription = {
@@ -14,7 +15,7 @@ const sub: Subscription = {
 }
 
 describe('reduceApp', () => {
-  const initial: AppState = { threads: { [threadId]: newThread() }, subscriptions: EMPTY_SUBSCRIPTIONS }
+  const initial: AppState = { threads: { [threadId]: newThread() }, subscriptions: EMPTY_SUBSCRIPTIONS, tasks: EMPTY_TASKS }
 
   it('replaces the subscriptions state wholesale and leaves threads alone', () => {
     const next: SubscriptionsState = { subscriptions: [sub], activeSubscriptionId: sub.id }
