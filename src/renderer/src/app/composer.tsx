@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { PromptInput } from '@/components/agents/prompt-input'
-import { AGENT_IDS, AGENTS, type AgentId } from '@shared/agents'
 import type { ConfigControl } from '@shared/thread'
 import { ConfigSelect } from './config-select'
-import { AgentGlyph } from './agent-glyph'
 
 export type ComposerProps = {
   busy: boolean
@@ -12,10 +10,11 @@ export type ComposerProps = {
   onSend: (text: string) => void
   onStop: () => void
   onConfig: (configId: string, value: string) => void
-  agent?: { value: AgentId; onChange: (agent: AgentId) => void }
+  /** The subscription picker; it also names the agent, since a subscription belongs to one. */
+  leading?: ReactNode
 }
 
-export function Composer({ busy, disabled = false, config, onSend, onStop, onConfig, agent }: ComposerProps) {
+export function Composer({ busy, disabled = false, config, onSend, onStop, onConfig, leading }: ComposerProps) {
   const [text, setText] = useState('')
 
   useEffect(() => {
@@ -27,7 +26,6 @@ export function Composer({ busy, disabled = false, config, onSend, onStop, onCon
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onStop])
 
-  const showAgentPicker = agent !== undefined && AGENT_IDS.length > 1
   return (
     <PromptInput
       value={text}
@@ -43,17 +41,9 @@ export function Composer({ busy, disabled = false, config, onSend, onStop, onCon
       minRows={2}
       maxRows={10}
       className="bg-card shadow-sm"
-      models={showAgentPicker ? AGENT_IDS.map((id) => ({ value: id, label: AGENTS[id].label, icon: <AgentGlyph agentId={id} /> })) : []}
-      model={agent?.value}
-      onModelChange={(id) => agent?.onChange(id as AgentId)}
       leadingAction={
         <>
-          {!showAgentPicker && agent ? (
-            <span className="flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground">
-              <AgentGlyph agentId={agent.value} />
-              {AGENTS[agent.value].label}
-            </span>
-          ) : null}
+          {leading}
           {config.map((control) => (
             <ConfigSelect key={control.id} control={control} disabled={busy} onChange={(value) => onConfig(control.id, value)} />
           ))}

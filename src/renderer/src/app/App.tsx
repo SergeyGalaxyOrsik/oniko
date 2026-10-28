@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Settings } from 'lucide-react'
 import { AppSidebar } from '@/components/app-sidebar'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { AGENTS } from '@shared/agents'
-import { activeSubscription, type SubscriptionsState } from '@shared/subscriptions'
+import { activeSubscription, type Subscription, type SubscriptionsState } from '@shared/subscriptions'
+import { AgentGlyph } from './agent-glyph'
 import { isBusy, type Thread, type ThreadId } from '@shared/thread'
 import { AuthCard } from './auth-card'
 import { Composer } from './composer'
 import { FolderPicker } from './folder-picker'
 import { basename } from './format'
 import { SettingsView } from './settings-view'
+import { LoginHint } from './subscription-ui'
+import { LOCKED_HINT, SubscriptionPicker } from './subscription-picker'
 import { Timeline } from './timeline'
 import { useAppState } from './use-app-state'
 
-function StatusBanner({ thread }: { thread: Thread }) {
+function StatusBanner({ thread, subscription }: { thread: Thread; subscription: Subscription | undefined }) {
+  if (subscription?.account.kind === 'logged_out') return <LoginHint subscription={subscription} />
   const s = thread.status
   if (s.kind === 'auth_required') return <AuthCard thread={thread} methods={s.methods} />
   if (s.kind === 'error') return <p className="text-sm text-destructive">{AGENTS[thread.agentId].label} failed to start: {s.message}</p>
@@ -26,14 +32,16 @@ function StatusBanner({ thread }: { thread: Thread }) {
   return null
 }
 
-function ThreadView({ thread }: { thread: Thread }) {
+function ThreadView({ thread, subscriptions }: { thread: Thread; subscriptions: SubscriptionsState }) {
   const busy = isBusy(thread.status)
+  const subscription = subscriptions.subscriptions.find((s) => s.id === thread.subscriptionId)
   return (
     <>
       <Timeline thread={thread} />
       <div className="mx-auto w-full max-w-3xl space-y-3 px-6 pb-5">
-        <StatusBanner thread={thread} />
+        <StatusBanner thread={thread} subscription={subscription} />
         <Composer
+          leading={<SubscriptionPicker subscriptions={subscriptions.subscriptions} current={subscription} readOnly />}
           busy={busy}
           config={thread.config}
           onSend={(text) => void window.oniko.threads.prompt(thread.id, text)}
@@ -99,6 +107,7 @@ function NewThread({
         <Composer
           busy={false}
           disabled={!cwd || !active}
+          leading={<SubscriptionPicker subscriptions={subscriptions.subscriptions} current={active} readOnly={false} />}
           config={[]}
           onSend={(text) => void send(text)}
           onStop={() => {}}
@@ -109,7 +118,32 @@ function NewThread({
   )
 }
 
-function InsetHeader({ view, thread, onBack }: { view: View; thread: Thread | undefined; onBack: () => void }) {
+function ThreadSubscriptionBadge({ subscription }: { subscription: Subscription | undefined }) {
+  if (!subscription) return null
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" data-testid="thread-subscription" className="no-drag ml-auto gap-1.5 font-normal text-muted-foreground">
+          <AgentGlyph agentId={subscription.agentId} className="size-3" />
+          {subscription.label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>{LOCKED_HINT}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function InsetHeader({
+  view,
+  thread,
+  subscriptions,
+  onBack,
+}: {
+  view: View
+  thread: Thread | undefined
+  subscriptions: SubscriptionsState
+  onBack: () => void
+}) {
   const { state } = useSidebar()
   return (
     <header
@@ -153,7 +187,7 @@ function InsetHeader({ view, thread, onBack }: { view: View; thread: Thread | un
           Back
         </Button>
       ) : thread ? (
-        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{AGENTS[thread.agentId].label}</span>
+        <ThreadSubscriptionBadge subscription={subscriptions.subscriptions.find((s) => s.id === thread.subscriptionId)} />
       ) : null}
     </header>
   )
@@ -190,13 +224,14 @@ export function App() {
         onNew={startNew}
         settingsOpen={view.kind === 'settings'}
         onOpenSettings={openSettings}
+        subscriptions={subscriptions}
       />
       <SidebarInset className="min-h-0 overflow-hidden">
-        <InsetHeader view={view} thread={selected} onBack={closeSettings} />
+        <InsetHeader view={view} thread={selected} subscriptions={subscriptions} onBack={closeSettings} />
         {view.kind === 'settings' ? (
           <SettingsView state={subscriptions} threads={list} home={home} />
         ) : selected ? (
-          <ThreadView key={selected.id} thread={selected} />
+          <ThreadView key={selected.id} thread={selected} subscriptions={subscriptions} />
         ) : (
           <NewThread subscriptions={subscriptions} onCreated={selectThread} onOpenSettings={openSettings} />
         )}

@@ -13,7 +13,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { AGENT_IDS, AGENTS } from "@shared/agents"
+import type { SubscriptionsState } from "@shared/subscriptions"
 import type { Thread, ThreadId } from "@shared/thread"
 
 export function AppSidebar({
@@ -23,6 +23,7 @@ export function AppSidebar({
   onNew,
   settingsOpen,
   onOpenSettings,
+  subscriptions,
   ...props
 }: {
   threads: Thread[]
@@ -31,6 +32,7 @@ export function AppSidebar({
   onNew: () => void
   settingsOpen: boolean
   onOpenSettings: () => void
+  subscriptions: SubscriptionsState
 } & React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar variant="inset" {...props}>
@@ -49,13 +51,11 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain threads={threads} selectedId={selectedId} onSelect={onSelectThread} />
+        <NavMain threads={threads} subscriptions={subscriptions} selectedId={selectedId} onSelect={onSelectThread} />
         <NavSecondary className="mt-auto" settingsOpen={settingsOpen} onOpenSettings={onOpenSettings} />
       </SidebarContent>
       <SidebarFooter>
-        {AGENT_IDS.map((id) => (
-          <NavUser key={id} agent={AGENTS[id]} status={threads.find((t) => t.agentId === id)?.status ?? null} />
-        ))}
+        <NavUser state={subscriptions} onManage={onOpenSettings} />
       </SidebarFooter>
     </Sidebar>
   )

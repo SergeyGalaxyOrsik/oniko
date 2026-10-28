@@ -38,8 +38,12 @@ export function planLabel(plan: string | null): string | null {
   return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`
 }
 
-/** "email · Max plan · Org", skipping whatever the CLI did not report. */
+/**
+ * "email · Max plan · Org", skipping whatever the CLI did not report. A personal account's org is
+ * named "<email>'s Organization", which repeats the email, so it is left out.
+ */
 export function accountLine(account: AccountStatus): string | null {
   if (account.kind !== 'logged_in') return null
-  return [account.email, planLabel(account.plan), account.orgName].filter(Boolean).join(' · ') || null
+  const org = account.orgName && account.orgName !== `${account.email}'s Organization` ? account.orgName : null
+  return [account.email, planLabel(account.plan), org].filter(Boolean).join(' · ') || null
 }
