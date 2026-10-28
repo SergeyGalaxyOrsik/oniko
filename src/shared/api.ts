@@ -7,6 +7,8 @@ import type { Thread, ThreadId } from './thread'
 export const EVENT_CHANNEL = 'oniko:event'
 /** Main asks the renderer to show a thread, e.g. after a notification about it is clicked. */
 export const OPEN_THREAD_CHANNEL = 'oniko:openThread'
+/** One-way: the renderer reports its uncaught errors to main for telemetry. */
+export const RENDERER_ERROR_CHANNEL = 'telemetry:rendererError'
 
 /**
  * Every broadcast event carries the bus's sequence number, and a snapshot records the last one
@@ -15,6 +17,9 @@ export const OPEN_THREAD_CHANNEL = 'oniko:openThread'
 export type SequencedEvent = { seq: number; event: AppEvent }
 /** `home` lets the renderer shorten paths to `~`; a sandboxed renderer cannot ask the OS. */
 export type AppSnapshot = { seq: number; home: string; threads: Thread[]; subscriptions: SubscriptionsState; tasks: TasksState }
+/** `available` is false when this build or environment has no telemetry server. */
+export type TelemetryState = { enabled: boolean; available: boolean }
+export type RendererErrorReport = { name: string; message: string; stack?: string }
 
 export type OnikoApi = {
   snapshot(): Promise<AppSnapshot>
@@ -56,6 +61,12 @@ export type OnikoApi = {
   }
   folders: { recent(): Promise<string[]> }
   dialog: { pickFolder(options?: { showHidden?: boolean }): Promise<string | null> }
+  telemetry: {
+    get(): Promise<TelemetryState>
+    /** Turning it off also drops whatever is still queued. */
+    setEnabled(enabled: boolean): Promise<void>
+    reportError(report: RendererErrorReport): void
+  }
   onEvent(cb: (event: SequencedEvent) => void): () => void
   onOpenThread(cb: (id: ThreadId) => void): () => void
 }
@@ -88,4 +99,6 @@ export const CHANNELS = {
   tasksRemoveStatus: 'tasks:removeStatus',
   foldersRecent: 'folders:recent',
   dialogPickFolder: 'dialog:pickFolder',
+  telemetryGet: 'telemetry:get',
+  telemetrySetEnabled: 'telemetry:setEnabled',
 } as const

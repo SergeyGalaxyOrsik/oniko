@@ -3,8 +3,10 @@ import { Check, RefreshCw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import type { TelemetryState } from '@shared/api'
 import { planLabel, type AccountStatus, type Subscription, type SubscriptionId, type SubscriptionsState } from '@shared/subscriptions'
 import type { Thread } from '@shared/thread'
 import { AddSubscriptionDialog } from './add-subscription-dialog'
@@ -361,6 +363,44 @@ function RefreshAll({ subscriptions }: { subscriptions: Subscription[] }) {
   )
 }
 
+function PrivacySettings() {
+  const [state, setState] = useState<TelemetryState | null>(null)
+  useEffect(() => {
+    let live = true
+    void window.oniko.telemetry.get().then((s) => live && setState(s))
+    return () => {
+      live = false
+    }
+  }, [])
+  const toggle = (enabled: boolean) => {
+    setState((s) => (s ? { ...s, enabled } : s))
+    void window.oniko.telemetry.setEnabled(enabled)
+  }
+  return (
+    <SettingsSection title="Privacy">
+      <SettingsPanel>
+        <SettingsRow
+          title="Share anonymous usage data and crash reports"
+          description={
+            state && !state.available
+              ? 'Not available in this build.'
+              : 'Which features get used, error reports and basic hardware info. Never what you write or the code you work on.'
+          }
+          control={
+            <Switch
+              aria-label="Share anonymous usage data and crash reports"
+              data-testid="telemetry-toggle"
+              checked={state?.enabled ?? false}
+              disabled={!state?.available}
+              onCheckedChange={toggle}
+            />
+          }
+        />
+      </SettingsPanel>
+    </SettingsSection>
+  )
+}
+
 export function SettingsView({ state, threads, home }: { state: SubscriptionsState; threads: Thread[]; home: string }) {
   const { subscriptions, activeSubscriptionId } = state
   const [selectedId, setSelectedId] = useState<SubscriptionId | null>(activeSubscriptionId)
@@ -370,7 +410,7 @@ export function SettingsView({ state, threads, home }: { state: SubscriptionsSta
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="settings-view">
-      <div className="@container/subscriptions mx-auto w-full max-w-5xl px-6 py-8">
+      <div className="@container/subscriptions mx-auto w-full max-w-5xl space-y-8 px-6 py-8">
         <SettingsSection
           title="Subscriptions"
           headerAction={
@@ -415,6 +455,7 @@ export function SettingsView({ state, threads, home }: { state: SubscriptionsSta
             </SettingsPanel>
           )}
         </SettingsSection>
+        <PrivacySettings />
       </div>
     </div>
   )

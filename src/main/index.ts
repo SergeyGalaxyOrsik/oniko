@@ -12,6 +12,7 @@ import { registerIpc } from './ipc'
 import { SubscriptionStore } from './subscription-store'
 import { git, TaskRunner } from './task-runner'
 import { TaskStore } from './task-store'
+import { startTelemetry } from './telemetry'
 import { ThreadStore } from './thread-store'
 
 const userDataOverride = process.env['ONIKO_USER_DATA']
@@ -48,6 +49,7 @@ void app.whenReady().then(() => {
   const logDir = join(app.getPath('userData'), 'logs')
   mkdirSync(logDir, { recursive: true })
   const db = new ThreadDb(join(app.getPath('userData'), 'oniko.db'))
+  const telemetry = startTelemetry(db)
   const recentFolders = () => db.getSetting(RECENT_KEY, z.array(z.string())) ?? []
   const rememberFolder = (path: string) => {
     db.setSetting(RECENT_KEY, [path, ...recentFolders().filter((p) => p !== path)].slice(0, RECENT_LIMIT))
@@ -106,7 +108,7 @@ void app.whenReady().then(() => {
     },
   })
   void subscriptions.refresh()
-  registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder })
+  registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder, telemetry })
   app.on('before-quit', () => store.disposeAll())
   app.on('will-quit', () => db.close())
   createWindow()

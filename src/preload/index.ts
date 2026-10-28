@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { CHANNELS, EVENT_CHANNEL, OPEN_THREAD_CHANNEL, type OnikoApi, type SequencedEvent } from '@shared/api'
+import { CHANNELS, EVENT_CHANNEL, OPEN_THREAD_CHANNEL, RENDERER_ERROR_CHANNEL, type OnikoApi, type SequencedEvent } from '@shared/api'
 import type { ThreadId } from '@shared/thread'
 
 const call =
@@ -40,6 +40,11 @@ const api: OnikoApi = {
   },
   folders: { recent: call(CHANNELS.foldersRecent) },
   dialog: { pickFolder: call(CHANNELS.dialogPickFolder) },
+  telemetry: {
+    get: call(CHANNELS.telemetryGet),
+    setEnabled: call(CHANNELS.telemetrySetEnabled),
+    reportError: (report) => ipcRenderer.send(RENDERER_ERROR_CHANNEL, report),
+  },
   onEvent(cb) {
     const listener = (_event: IpcRendererEvent, event: SequencedEvent) => cb(event)
     ipcRenderer.on(EVENT_CHANNEL, listener)
