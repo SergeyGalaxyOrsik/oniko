@@ -173,6 +173,7 @@ describe('reduceThreads', () => {
       {
         id: 'model',
         label: 'Model',
+        category: 'model',
         source: 'config_option',
         value: 'opus',
         options: [

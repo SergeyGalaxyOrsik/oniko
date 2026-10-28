@@ -54,6 +54,8 @@ export type ConfigSource = 'config_option' | 'mode' | 'model'
 export type ConfigControl = {
   id: string
   label: string
+  /** ACP's semantic category (model, mode, thought_level, model_config, ...), when the agent gives one. */
+  category?: string
   source: ConfigSource
   value: string
   options: { value: string; label: string; description?: string }[]

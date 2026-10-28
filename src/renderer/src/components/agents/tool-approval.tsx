@@ -59,6 +59,8 @@ export interface ToolApprovalProps {
   onApprove?: () => void;
   onAlwaysAllow?: () => void;
   onDeny?: () => void;
+  /** Replaces the built-in Allow once / Always allow / Deny row while pending. */
+  actions?: ReactNode;
   className?: string;
 }
 
@@ -116,6 +118,7 @@ export function ToolApproval({
   onApprove,
   onAlwaysAllow,
   onDeny,
+  actions,
   className,
 }: ToolApprovalProps) {
   const reduce = useReducedMotion() ?? false;
@@ -242,6 +245,7 @@ export function ToolApproval({
             transition={{ duration: reduce ? 0.12 : 0.22, ease: EASE_OUT }}
             className="flex flex-wrap items-center gap-2 border-t border-border/60 px-4 py-3"
           >
+            {actions ?? (<>
             <motion.button
               type="button"
               onClick={onApprove}
@@ -269,6 +273,7 @@ export function ToolApproval({
             >
               Deny
             </button>
+            </>)}
           </motion.div>
         ) : null}
       </AnimatePresence>

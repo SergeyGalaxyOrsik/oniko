@@ -24,7 +24,7 @@ export function registerIpc({ store, recentFolders, rememberFolder }: IpcDeps): 
   }
 
   handle(CHANNELS.agentsList, z.tuple([]), () => Object.values(AGENTS))
-  handle(CHANNELS.threadsList, z.tuple([]), () => store.list())
+  handle(CHANNELS.threadsList, z.tuple([]), () => store.snapshot())
   handle(CHANNELS.threadsCreate, z.tuple([z.object({ agentId, cwd: z.string().min(1) })]), ({ agentId, cwd }) => {
     rememberFolder(cwd)
     return store.create(agentId, cwd)

@@ -4,10 +4,17 @@ import type { Thread, ThreadId } from './thread'
 
 export const EVENT_CHANNEL = 'oniko:event'
 
+/**
+ * Every broadcast event carries the store's sequence number, and a snapshot records the last one
+ * it includes, so a renderer can tell which events a snapshot already reflects.
+ */
+export type SequencedEvent = { seq: number; event: ThreadEvent }
+export type ThreadSnapshot = { seq: number; threads: Thread[] }
+
 export type OnikoApi = {
   agents: { list(): Promise<AgentInfo[]> }
   threads: {
-    list(): Promise<Thread[]>
+    list(): Promise<ThreadSnapshot>
     create(input: { agentId: AgentId; cwd: string }): Promise<ThreadId>
     prompt(id: ThreadId, text: string): Promise<void>
     cancel(id: ThreadId): Promise<void>
@@ -18,7 +25,7 @@ export type OnikoApi = {
   }
   folders: { recent(): Promise<string[]> }
   dialog: { pickFolder(): Promise<string | null> }
-  onEvent(cb: (event: ThreadEvent) => void): () => void
+  onEvent(cb: (event: SequencedEvent) => void): () => void
 }
 
 /** One table drives both the preload bridge and the ipcMain handlers, so channel names cannot drift. */

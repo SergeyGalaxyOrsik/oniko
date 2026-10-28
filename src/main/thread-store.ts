@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentId } from '@shared/agents'
+import type { SequencedEvent, ThreadSnapshot } from '@shared/api'
 import type { ThreadEvent, ThreadEventBody } from '@shared/events'
 import type { Thread, ThreadId, ThreadMap } from '@shared/thread'
 import { reduceThreads } from '@shared/thread-reducer'
@@ -10,12 +11,13 @@ import type { ThreadDb } from './db'
 export type ThreadStoreDeps = {
   db: ThreadDb
   logDir: string
-  broadcast: (event: ThreadEvent) => void
+  broadcast: (event: SequencedEvent) => void
 }
 
 /** Authoritative thread state: every change is a reduced event, written through to the db, then broadcast. */
 export class ThreadStore {
   private threads: ThreadMap = {}
+  private seq = 0
   private readonly sessions = new Map<ThreadId, AgentSession>()
 
   constructor(private readonly deps: ThreadStoreDeps) {
@@ -28,6 +30,10 @@ export class ThreadStore {
 
   list(): Thread[] {
     return Object.values(this.threads).sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  snapshot(): ThreadSnapshot {
+    return { seq: this.seq, threads: this.list() }
   }
 
   create(agentId: AgentId, cwd: string): ThreadId {
@@ -73,6 +79,7 @@ export class ThreadStore {
     const prev = this.threads[event.threadId]
     this.threads = reduceThreads(this.threads, event)
     this.deps.db.saveChange(event.threadId, prev, this.threads[event.threadId])
-    this.deps.broadcast(event)
+    this.seq += 1
+    this.deps.broadcast({ seq: this.seq, event })
   }
 }

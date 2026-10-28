@@ -1,10 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { App } from './app/App'
 import './index.css'
-
-function App() {
-  return <div className="p-4">Oniko</div>
-}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

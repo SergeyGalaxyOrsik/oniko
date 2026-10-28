@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { CHANNELS, EVENT_CHANNEL, type OnikoApi } from '@shared/api'
-import type { ThreadEvent } from '@shared/events'
+import { CHANNELS, EVENT_CHANNEL, type OnikoApi, type SequencedEvent } from '@shared/api'
 
 const call =
   <Args extends unknown[], R>(channel: string) =>
@@ -22,7 +21,7 @@ const api: OnikoApi = {
   folders: { recent: call(CHANNELS.foldersRecent) },
   dialog: { pickFolder: call(CHANNELS.dialogPickFolder) },
   onEvent(cb) {
-    const listener = (_event: IpcRendererEvent, event: ThreadEvent) => cb(event)
+    const listener = (_event: IpcRendererEvent, event: SequencedEvent) => cb(event)
     ipcRenderer.on(EVENT_CHANNEL, listener)
     return () => ipcRenderer.off(EVENT_CHANNEL, listener)
   },

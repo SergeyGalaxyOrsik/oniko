@@ -15,6 +15,7 @@ export function controlsFromConfigOptions(options: SessionConfigOption[]): Confi
       {
         id: option.id,
         label: option.name,
+        ...(option.category ? { category: option.category } : {}),
         source: 'config_option',
         value: option.currentValue,
         options: flat.map((o) => ({ value: o.value, label: o.name, ...(o.description ? { description: o.description } : {}) })),
@@ -27,6 +28,7 @@ export function controlFromModes(modes: SessionModeState): ConfigControl {
   return {
     id: 'mode',
     label: 'Mode',
+    category: 'mode',
     source: 'mode',
     value: modes.currentModeId,
     options: modes.availableModes.map((m) => ({ value: m.id, label: m.name, ...(m.description ? { description: m.description } : {}) })),
@@ -37,6 +39,7 @@ export function controlFromModels(models: LegacyModelState): ConfigControl {
   return {
     id: 'model',
     label: 'Model',
+    category: 'model',
     source: 'model',
     value: models.currentModelId,
     options: models.availableModels.map((m) => ({ value: m.modelId, label: m.name, ...(m.description ? { description: m.description } : {}) })),
