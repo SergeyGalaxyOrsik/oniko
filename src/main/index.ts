@@ -1,8 +1,10 @@
 import { mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { EVENT_CHANNEL } from '@shared/api'
+import { ACCOUNT_SPECS } from './agent-registry'
 import { ThreadDb } from './db'
 import { registerIpc } from './ipc'
 import { ThreadStore } from './thread-store'
@@ -46,6 +48,7 @@ void app.whenReady().then(() => {
   const store = new ThreadStore({
     db,
     logDir,
+    accountEnv: (thread) => ACCOUNT_SPECS[thread.agentId].envFor(join(homedir(), '.claude')),
     broadcast: (event) => {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send(EVENT_CHANNEL, event)
     },

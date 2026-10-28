@@ -9,7 +9,7 @@ import { AGENTS, type AgentId } from '@shared/agents'
 import { controlsFromConfigOptions, normalizeConfig, withValue, type LegacyModelState } from '@shared/config'
 import type { ThreadEventBody } from '@shared/events'
 import type { ConfigControl, ConfigSource } from '@shared/thread'
-import { SPAWN_SPECS } from './agent-registry'
+import { childEnv, SPAWN_SPECS, type EnvLayer } from './agent-registry'
 
 const AUTH_REQUIRED = -32000
 export const FRESH_SESSION_NOTICE = "Started a fresh agent session; earlier context is not in the agent's memory"
@@ -60,6 +60,8 @@ const SETTERS: Record<ConfigSource, Setter> = {
 export type AgentSessionOptions = {
   agentId: AgentId
   cwd: string
+  /** The subscription's env (CLAUDE_CONFIG_DIR set or unset), applied last so nothing inherited survives it. */
+  accountEnv: EnvLayer
   acpSessionId: string | null
   logPath: string
   emit: (event: ThreadEventBody) => void
@@ -168,7 +170,7 @@ export class AgentSession {
     this.log ??= createWriteStream(this.opts.logPath, { flags: 'a' })
     const proc = spawn(spec.command, spec.args, {
       cwd: this.opts.cwd,
-      env: { ...process.env, ...spec.env },
+      env: childEnv(process.env, spec.env, this.opts.accountEnv),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.proc = proc

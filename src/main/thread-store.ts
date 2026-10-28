@@ -5,12 +5,14 @@ import type { ThreadEvent, ThreadEventBody } from '@shared/events'
 import type { Thread, ThreadId, ThreadMap } from '@shared/thread'
 import { reduceThreads } from '@shared/thread-reducer'
 import { restoreThread } from '@shared/thread-restore'
+import type { EnvLayer } from './agent-registry'
 import { AgentSession, logPathFor } from './agent-session'
 import type { ThreadDb } from './db'
 
 export type ThreadStoreDeps = {
   db: ThreadDb
   logDir: string
+  accountEnv: (thread: Thread) => EnvLayer
   broadcast: (event: SequencedEvent) => void
 }
 
@@ -56,6 +58,7 @@ export class ThreadStore {
     const session = new AgentSession({
       agentId: thread.agentId,
       cwd: thread.cwd,
+      accountEnv: this.deps.accountEnv(thread),
       acpSessionId: thread.acpSessionId,
       logPath: logPathFor(this.deps.logDir, id),
       emit: (event: ThreadEventBody) => this.dispatch({ ...event, threadId: id }),

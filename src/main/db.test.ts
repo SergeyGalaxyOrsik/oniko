@@ -81,7 +81,7 @@ describe('ThreadStore startup', () => {
       status: { kind: 'awaiting_permission', requestId: 'perm-1', startedAt: 1 },
       timeline: [...sample.timeline, { kind: 'permission', id: 'perm-1', toolCallId: 'tc', title: 'echo', options: [], outcome: null }],
     })
-    const store = new ThreadStore({ db, logDir: dir, broadcast: () => {} })
+    const store = new ThreadStore({ db, logDir: dir, accountEnv: () => ({}), broadcast: () => {} })
     const [thread] = store.list()
     expect(thread!.status).toEqual({ kind: 'dormant' })
     expect(thread!.timeline.slice(-2)).toMatchObject([
