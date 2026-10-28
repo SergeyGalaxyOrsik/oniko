@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import { AGENT_IDS, type AgentId } from '@shared/agents'
 import type { AccountStatus, Subscription, SubscriptionId } from '@shared/subscriptions'
-import { STATUS_COLORS, STATUS_KINDS, type Task, type TaskId, type TaskStatus, type TaskStatusId } from '@shared/tasks'
+import { STATUS_COLORS, STATUS_KINDS, type Task, type TaskId, type TaskRun, type TaskStatus, type TaskStatusId } from '@shared/tasks'
 import type { ConfigControl, Thread, ThreadId, ThreadStatus, TimelineItem } from '@shared/thread'
 
 /** Append-only. Each entry runs once, in order, tracked by PRAGMA user_version. */
@@ -69,6 +69,10 @@ export const MIGRATIONS = [
      SELECT COUNT(*) FROM tasks AS t
      WHERE t.project = tasks.project AND (t.created_at < tasks.created_at OR (t.created_at = tasks.created_at AND t.id <= tasks.id))
    );`,
+  // No foreign key on the subscription: removing one sends its tasks back to the active subscription.
+  `ALTER TABLE tasks ADD COLUMN subscription_id TEXT;
+   ALTER TABLE tasks ADD COLUMN pull_request INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE tasks ADD COLUMN run_json TEXT;`,
 ]
 
 /** A subscription as stored: the login command is derived from the agent spec on load. */
@@ -114,6 +118,9 @@ const taskRow = z.object({
   position: z.number(),
   created_at: z.number(),
   updated_at: z.number(),
+  subscription_id: z.string().nullable(),
+  pull_request: z.number(),
+  run_json: z.string().nullable(),
 })
 
 const itemRow = z.object({ thread_id: z.string(), json: z.string() })
@@ -286,6 +293,9 @@ export class ThreadDb {
           position: row.position,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
+          subscriptionId: row.subscription_id as SubscriptionId | null,
+          pullRequest: row.pull_request === 1,
+          run: row.run_json === null ? null : (JSON.parse(row.run_json) as TaskRun),
         }
       })
   }
@@ -293,11 +303,26 @@ export class ThreadDb {
   saveTask(task: Task): void {
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project, number, title, description, status_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (id, project, number, title, description, status_id, position, created_at, updated_at, subscription_id, pull_request, run_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET title = excluded.title, description = excluded.description, status_id = excluded.status_id,
-           position = excluded.position, updated_at = excluded.updated_at`,
+           position = excluded.position, updated_at = excluded.updated_at, subscription_id = excluded.subscription_id,
+           pull_request = excluded.pull_request, run_json = excluded.run_json`,
       )
-      .run(task.id, task.project, task.number, task.title, task.description, task.statusId, task.position, task.createdAt, task.updatedAt)
+      .run(
+        task.id,
+        task.project,
+        task.number,
+        task.title,
+        task.description,
+        task.statusId,
+        task.position,
+        task.createdAt,
+        task.updatedAt,
+        task.subscriptionId,
+        task.pullRequest ? 1 : 0,
+        task.run === null ? null : JSON.stringify(task.run),
+      )
   }
 
   deleteTask(id: TaskId): void {

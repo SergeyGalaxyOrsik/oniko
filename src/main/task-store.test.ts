@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_STATUSES, projectStatuses, statusTasks, type TasksState } from '@shared/tasks'
+import type { SubscriptionId } from '@shared/subscriptions'
+import type { ThreadId } from '@shared/thread'
 import { ThreadDb } from './db'
 import { TaskStore } from './task-store'
 
@@ -101,5 +103,26 @@ describe('task numbers and status kinds', () => {
     const review = store.addStatus(project, 'Review')
     store.updateStatus(review, { kind: 'canceled' })
     expect(store.state().statuses.find((s) => s.id === review)!.kind).toBe('canceled')
+  })
+})
+
+describe('agent fields', () => {
+  it('persists the subscription, pull request choice and run, and reports each status a task enters', () => {
+    const entered: string[] = []
+    const store = new TaskStore({ db, publish: () => {}, entered: (task, status) => entered.push(`${task.title}:${status.name}`) })
+    store.open(project)
+    const [backlog, todo] = projectStatuses(store.state(), project)
+    const id = store.create({ project, title: 'a', description: '', statusId: backlog!.id })
+    store.move(id, backlog!.id, null)
+    store.move(id, todo!.id, null)
+    expect(entered).toEqual(['a:Backlog', 'a:To do'])
+
+    store.update(id, { subscriptionId: 'sub-1' as SubscriptionId, pullRequest: true })
+    store.setRun(id, { stage: 'working', threadId: 't-1' as ThreadId, worktree: '/w', branch: 'b' })
+    expect(newStore().state().tasks[0]).toMatchObject({
+      subscriptionId: 'sub-1',
+      pullRequest: true,
+      run: { stage: 'working', threadId: 't-1', worktree: '/w', branch: 'b' },
+    })
   })
 })

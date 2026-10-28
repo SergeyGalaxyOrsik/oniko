@@ -5,6 +5,10 @@ import type { StatusKind, TaskId, TasksState, TaskStatusId } from './tasks'
 import type { Thread, ThreadId } from './thread'
 
 export const EVENT_CHANNEL = 'oniko:event'
+/** Main asks the renderer to show a thread, e.g. after a notification about it is clicked. */
+export const OPEN_THREAD_CHANNEL = 'oniko:openThread'
+/** One-way: the renderer reports its uncaught errors to main for telemetry. */
+export const RENDERER_ERROR_CHANNEL = 'telemetry:rendererError'
 
 /**
  * Every broadcast event carries the bus's sequence number, and a snapshot records the last one
@@ -13,6 +17,9 @@ export const EVENT_CHANNEL = 'oniko:event'
 export type SequencedEvent = { seq: number; event: AppEvent }
 /** `home` lets the renderer shorten paths to `~`; a sandboxed renderer cannot ask the OS. */
 export type AppSnapshot = { seq: number; home: string; threads: Thread[]; subscriptions: SubscriptionsState; tasks: TasksState }
+/** `available` is false when this build or environment has no telemetry server. */
+export type TelemetryState = { enabled: boolean; available: boolean }
+export type RendererErrorReport = { name: string; message: string; stack?: string }
 
 export type OnikoApi = {
   snapshot(): Promise<AppSnapshot>
@@ -42,7 +49,8 @@ export type OnikoApi = {
     /** Seeds the default statuses for a project that has none yet. */
     open(project: string): Promise<void>
     create(input: { project: string; title: string; description: string; statusId: TaskStatusId }): Promise<TaskId>
-    update(id: TaskId, patch: { title?: string; description?: string }): Promise<void>
+    /** The subscription can only change until the agent has started. */
+    update(id: TaskId, patch: { title?: string; description?: string; subscriptionId?: SubscriptionId | null; pullRequest?: boolean }): Promise<void>
     /** Places the task in `statusId` ahead of `beforeId`, or last when it is null. */
     move(id: TaskId, statusId: TaskStatusId, beforeId: TaskId | null): Promise<void>
     remove(id: TaskId): Promise<void>
@@ -53,7 +61,14 @@ export type OnikoApi = {
   }
   folders: { recent(): Promise<string[]> }
   dialog: { pickFolder(options?: { showHidden?: boolean }): Promise<string | null> }
+  telemetry: {
+    get(): Promise<TelemetryState>
+    /** Turning it off also drops whatever is still queued. */
+    setEnabled(enabled: boolean): Promise<void>
+    reportError(report: RendererErrorReport): void
+  }
   onEvent(cb: (event: SequencedEvent) => void): () => void
+  onOpenThread(cb: (id: ThreadId) => void): () => void
 }
 
 /** One table drives both the preload bridge and the ipcMain handlers, so channel names cannot drift. */
@@ -84,4 +99,6 @@ export const CHANNELS = {
   tasksRemoveStatus: 'tasks:removeStatus',
   foldersRecent: 'folders:recent',
   dialogPickFolder: 'dialog:pickFolder',
+  telemetryGet: 'telemetry:get',
+  telemetrySetEnabled: 'telemetry:setEnabled',
 } as const

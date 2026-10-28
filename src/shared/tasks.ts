@@ -1,3 +1,6 @@
+import type { SubscriptionId } from './subscriptions'
+import type { Thread, ThreadId } from './thread'
+
 export type TaskId = string & { __brand: 'TaskId' }
 export type TaskStatusId = string & { __brand: 'TaskStatusId' }
 
@@ -25,7 +28,21 @@ export type Task = {
   position: number
   createdAt: number
   updatedAt: number
+  /** The subscription the agent runs on; null means whichever is active when it starts. Fixed once a thread exists. */
+  subscriptionId: SubscriptionId | null
+  /** After the agent's first turn, ask it to push the branch and open a pull request. */
+  pullRequest: boolean
+  run: TaskRun | null
 }
+
+/**
+ * The agent working a task, from the moment the task enters a "Not started" status. A failed run
+ * is retried by moving the task into one again.
+ */
+export type TaskRun =
+  | { stage: 'starting' }
+  | { stage: 'failed'; error: string }
+  | { stage: 'working' | 'pull_request' | 'finished'; threadId: ThreadId; worktree: string; branch: string }
 
 export type TasksState = { statuses: TaskStatus[]; tasks: Task[] }
 
@@ -78,8 +95,27 @@ export function projectKey(project: string): string {
   return name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || 'TSK'
 }
 
-export function taskKey(task: Task): string {
+export function taskKey(task: Pick<Task, 'project' | 'number'>): string {
   return `${projectKey(task.project)}-${task.number}`
+}
+
+/** `oni-12-fix-the-login-form`: the key plus a slug of the title, used for both the branch and the worktree folder. */
+export function taskBranch(task: Pick<Task, 'project' | 'number' | 'title'>): string {
+  const slug = task.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, '')
+  return [taskKey(task).toLowerCase(), slug].filter(Boolean).join('-')
+}
+
+export function taskThreadId(task: Task): ThreadId | null {
+  return task.run && 'threadId' in task.run ? task.run.threadId : null
+}
+
+/** A task's thread runs in its worktree, but belongs under the task's project. */
+export function threadProject(state: TasksState, thread: Pick<Thread, 'id' | 'cwd'>): string {
+  return state.tasks.find((t) => taskThreadId(t) === thread.id)?.project ?? thread.cwd
 }
 
 /** Tasks of a project in the order the list shows them: by status, then by position. */

@@ -2,13 +2,14 @@ import { homedir } from 'node:os'
 import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron'
 import { z } from 'zod'
 import { AGENT_IDS, AGENTS, type AgentId } from '@shared/agents'
-import { CHANNELS, type AppSnapshot } from '@shared/api'
+import { CHANNELS, RENDERER_ERROR_CHANNEL, type AppSnapshot } from '@shared/api'
 import type { SubscriptionId } from '@shared/subscriptions'
 import { STATUS_KINDS, type TaskId, type TaskStatusId } from '@shared/tasks'
 import type { ThreadId } from '@shared/thread'
 import type { EventBus } from './event-bus'
 import type { SubscriptionStore } from './subscription-store'
 import type { TaskStore } from './task-store'
+import type { Telemetry } from './telemetry'
 import type { ThreadStore } from './thread-store'
 
 const threadId = z
@@ -37,12 +38,21 @@ export type IpcDeps = {
   tasks: TaskStore
   recentFolders: () => string[]
   rememberFolder: (path: string) => void
+  telemetry: Telemetry
 }
 
 /** The renderer is untrusted input: every payload is parsed here and nowhere downstream. */
-export function registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder }: IpcDeps): void {
+export function registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder, telemetry }: IpcDeps): void {
   const handle = <S extends z.ZodTuple>(channel: string, schema: S, fn: (...args: z.infer<S>) => unknown) => {
-    ipcMain.handle(channel, (_event, ...raw: unknown[]) => fn(...schema.parse(raw)))
+    ipcMain.handle(channel, async (_event, ...raw: unknown[]) => {
+      telemetry.invoked(channel)
+      try {
+        return await fn(...schema.parse(raw))
+      } catch (err) {
+        telemetry.failed(channel, err)
+        throw err
+      }
+    })
   }
 
   handle(CHANNELS.snapshot, z.tuple([]), (): AppSnapshot => ({
@@ -94,11 +104,24 @@ export function registerIpc({ bus, store, subscriptions, tasks, recentFolders, r
     z.tuple([z.object({ project, title: z.string(), description: z.string(), statusId: taskStatusId })]),
     (input) => tasks.create(input),
   )
-  handle(CHANNELS.tasksUpdate, z.tuple([taskId, z.object({ title: z.string().optional(), description: z.string().optional() })]), (id, patch) =>
-    tasks.update(id, {
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.description !== undefined ? { description: patch.description } : {}),
-    }),
+  handle(
+    CHANNELS.tasksUpdate,
+    z.tuple([
+      taskId,
+      z.object({
+        title: z.string().optional(),
+        description: z.string().optional(),
+        subscriptionId: subscriptionId.nullable().optional(),
+        pullRequest: z.boolean().optional(),
+      }),
+    ]),
+    (id, patch) =>
+      tasks.update(id, {
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.subscriptionId !== undefined ? { subscriptionId: patch.subscriptionId } : {}),
+        ...(patch.pullRequest !== undefined ? { pullRequest: patch.pullRequest } : {}),
+      }),
   )
   handle(CHANNELS.tasksMove, z.tuple([taskId, taskStatusId, taskId.nullable()]), (id, statusId, beforeId) => tasks.move(id, statusId, beforeId))
   handle(CHANNELS.tasksRemove, z.tuple([taskId]), (id) => tasks.remove(id))
@@ -124,4 +147,8 @@ export function registerIpc({ bus, store, subscriptions, tasks, recentFolders, r
     if (picked && !showHidden) rememberFolder(picked)
     return picked
   })
+
+  handle(CHANNELS.telemetryGet, z.tuple([]), () => telemetry.state())
+  handle(CHANNELS.telemetrySetEnabled, z.tuple([z.boolean()]), (enabled) => telemetry.setEnabled(enabled))
+  ipcMain.on(RENDERER_ERROR_CHANNEL, (_event, raw: unknown) => telemetry.rendererError(raw))
 }

@@ -1,16 +1,18 @@
 import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Notification } from 'electron'
 import { z } from 'zod'
 import icon from '../../resources/icon.png?asset'
-import { EVENT_CHANNEL } from '@shared/api'
+import { EVENT_CHANNEL, OPEN_THREAD_CHANNEL } from '@shared/api'
 import { ACCOUNT_SPECS } from './agent-registry'
 import { ThreadDb } from './db'
 import { EventBus } from './event-bus'
 import { registerIpc } from './ipc'
 import { SubscriptionStore } from './subscription-store'
+import { git, TaskRunner } from './task-runner'
 import { TaskStore } from './task-store'
+import { startTelemetry } from './telemetry'
 import { ThreadStore } from './thread-store'
 
 const userDataOverride = process.env['ONIKO_USER_DATA']
@@ -47,6 +49,7 @@ void app.whenReady().then(() => {
   const logDir = join(app.getPath('userData'), 'logs')
   mkdirSync(logDir, { recursive: true })
   const db = new ThreadDb(join(app.getPath('userData'), 'oniko.db'))
+  const telemetry = startTelemetry(db)
   const recentFolders = () => db.getSetting(RECENT_KEY, z.array(z.string())) ?? []
   const rememberFolder = (path: string) => {
     db.setSetting(RECENT_KEY, [path, ...recentFolders().filter((p) => p !== path)].slice(0, RECENT_LIMIT))
@@ -58,6 +61,9 @@ void app.whenReady().then(() => {
   })
   // The stores reference each other only through these late-bound callbacks.
   let store: ThreadStore | undefined
+  let runner: TaskRunner | undefined
+  // An unreferenced Notification can be collected before it is clicked, losing the click handler.
+  const notes = new Set<Notification>()
   const subscriptions = new SubscriptionStore({
     db,
     specs: ACCOUNT_SPECS,
@@ -74,11 +80,35 @@ void app.whenReady().then(() => {
       if (!sub) throw new Error('This thread’s subscription was removed')
       return ACCOUNT_SPECS[sub.agentId].envFor(sub.configDir)
     },
-    publish: (event) => bus.publish(event),
+    publish: (event) => {
+      bus.publish(event)
+      runner?.onThreadEvent(event)
+    },
   })
-  const tasks = new TaskStore({ db, publish: (event) => bus.publish(event) })
+  const tasks = new TaskStore({ db, publish: (event) => bus.publish(event), entered: (task, status) => runner?.entered(task, status) })
+  runner = new TaskRunner({
+    tasks,
+    threads: store,
+    subscriptions,
+    worktreeRoot: process.env['ONIKO_WORKTREES'] ?? join(homedir(), '.oniko', 'worktrees'),
+    git,
+    notify: ({ title, body, threadId }) => {
+      const note = new Notification({ title, body })
+      notes.add(note)
+      note.on('close', () => notes.delete(note))
+      note.on('click', () => {
+        notes.delete(note)
+        const win = BrowserWindow.getAllWindows()[0]
+        if (!win) return
+        win.show()
+        win.focus()
+        win.webContents.send(OPEN_THREAD_CHANNEL, threadId)
+      })
+      note.show()
+    },
+  })
   void subscriptions.refresh()
-  registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder })
+  registerIpc({ bus, store, subscriptions, tasks, recentFolders, rememberFolder, telemetry })
   app.on('before-quit', () => store.disposeAll())
   app.on('will-quit', () => db.close())
   createWindow()
