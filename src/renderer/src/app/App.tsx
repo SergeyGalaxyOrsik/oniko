@@ -11,7 +11,7 @@ import { Composer } from './composer'
 import { FolderPicker } from './folder-picker'
 import { basename } from './format'
 import { Timeline } from './timeline'
-import { useThreads } from './use-threads'
+import { useAppState } from './use-app-state'
 
 function StatusBanner({ thread }: { thread: Thread }) {
   const s = thread.status
@@ -117,7 +117,7 @@ function InsetHeader({ thread }: { thread: Thread | undefined }) {
 }
 
 export function App() {
-  const { threads } = useThreads()
+  const { threads } = useAppState()
   const [selectedId, setSelectedId] = useState<ThreadId | null>(null)
   const list = Object.values(threads).sort((a, b) => b.createdAt - a.createdAt)
   const selected = selectedId ? threads[selectedId] : undefined

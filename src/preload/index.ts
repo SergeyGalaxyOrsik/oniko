@@ -7,9 +7,9 @@ const call =
     ipcRenderer.invoke(channel, ...args)
 
 const api: OnikoApi = {
+  snapshot: call(CHANNELS.snapshot),
   agents: { list: call(CHANNELS.agentsList) },
   threads: {
-    list: call(CHANNELS.threadsList),
     create: call(CHANNELS.threadsCreate),
     prompt: call(CHANNELS.threadsPrompt),
     cancel: call(CHANNELS.threadsCancel),
@@ -17,6 +17,15 @@ const api: OnikoApi = {
     respondPermission: call(CHANNELS.threadsRespondPermission),
     authenticate: call(CHANNELS.threadsAuthenticate),
     remove: call(CHANNELS.threadsRemove),
+  },
+  subscriptions: {
+    list: call(CHANNELS.subscriptionsList),
+    add: call(CHANNELS.subscriptionsAdd),
+    update: call(CHANNELS.subscriptionsUpdate),
+    remove: call(CHANNELS.subscriptionsRemove),
+    refresh: call(CHANNELS.subscriptionsRefresh),
+    setActive: call(CHANNELS.subscriptionsSetActive),
+    detect: call(CHANNELS.subscriptionsDetect),
   },
   folders: { recent: call(CHANNELS.foldersRecent) },
   dialog: { pickFolder: call(CHANNELS.dialogPickFolder) },
