@@ -3,6 +3,9 @@ import { PromptInput } from '@/components/agents/prompt-input'
 import type { ConfigControl } from '@shared/thread'
 import { ConfigSelect } from './config-select'
 
+/** Only these reach the composer; the rest (fast mode, sub-agents, ...) keep the agent's value. */
+const SHOWN_CATEGORIES = new Set(['mode', 'model', 'thought_level'])
+
 export type ComposerProps = {
   busy: boolean
   disabled?: boolean
@@ -44,9 +47,11 @@ export function Composer({ busy, disabled = false, config, onSend, onStop, onCon
       leadingAction={
         <>
           {leading}
-          {config.map((control) => (
-            <ConfigSelect key={control.id} control={control} disabled={disabled} onChange={(value) => onConfig(control.id, value)} />
-          ))}
+          {config
+            .filter((control) => control.category && SHOWN_CATEGORIES.has(control.category))
+            .map((control) => (
+              <ConfigSelect key={control.id} control={control} disabled={disabled} onChange={(value) => onConfig(control.id, value)} />
+            ))}
         </>
       }
     />
