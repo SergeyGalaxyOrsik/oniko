@@ -1,7 +1,7 @@
 import type { PermissionOption, SessionUpdate, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { ConfigControl, PermissionOutcome, Thread, ThreadId, ThreadStatus } from './thread'
 
-type Payload =
+export type ThreadEventBody =
   | { type: 'thread_created'; thread: Thread }
   | { type: 'status'; status: ThreadStatus }
   | { type: 'session_attached'; acpSessionId: string }
@@ -14,5 +14,5 @@ type Payload =
   | { type: 'notice'; level: 'info' | 'error'; text: string }
   | { type: 'thread_removed' }
 
-export type ThreadEvent = Payload & { threadId: ThreadId }
+export type ThreadEvent = ThreadEventBody & { threadId: ThreadId }
 export type ThreadEventType = ThreadEvent['type']
