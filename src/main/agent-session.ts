@@ -12,6 +12,7 @@ import type { ConfigControl, ConfigSource } from '@shared/thread'
 import { SPAWN_SPECS } from './agent-registry'
 
 const AUTH_REQUIRED = -32000
+export const FRESH_SESSION_NOTICE = "Started a fresh agent session; earlier context is not in the agent's memory"
 
 const legacyModels = z.object({
   models: z
@@ -195,14 +196,54 @@ export class AgentSession {
     const conn = this.conn
     if (!conn) return false
     try {
+      const previous = this.acpSessionId
+      if (previous) {
+        const resumed = await this.reattach(conn, previous)
+        if (resumed) {
+          this.attached(previous, resumed)
+          return true
+        }
+      }
       const res = await conn.agent.request('session/new', { cwd: this.opts.cwd, mcpServers: [] })
       this.attached(res.sessionId, res)
+      if (previous) this.emit({ type: 'notice', level: 'info', text: FRESH_SESSION_NOTICE })
       return true
     } catch (error) {
       if (!isAuthRequired(error)) throw error
       this.emit({ type: 'status', status: { kind: 'auth_required', methods: this.init?.authMethods ?? [] } })
       return false
     }
+  }
+
+  /**
+   * Prefers session/resume because the timeline is already ours; session/load would replay the
+   * whole conversation, so its updates are dropped while it runs.
+   */
+  private async reattach(conn: acp.ClientConnection, sessionId: string): Promise<SessionSetup | null> {
+    const caps = this.init?.agentCapabilities
+    const params: acp.LoadSessionRequest = { sessionId, cwd: this.opts.cwd, mcpServers: [] }
+    try {
+      if (caps?.sessionCapabilities?.resume) {
+        const res = await conn.agent.request('session/resume', params)
+        this.logLine(`reattached ${sessionId} via session/resume`)
+        return res
+      }
+      if (caps?.loadSession) {
+        this.suppressUpdates = true
+        try {
+          const res = await conn.agent.request('session/load', params)
+          this.logLine(`reattached ${sessionId} via session/load`)
+          return res
+        } finally {
+          this.suppressUpdates = false
+        }
+      }
+      this.logLine('agent advertises neither session/resume nor session/load')
+    } catch (error) {
+      if (isAuthRequired(error)) throw error
+      this.logLine(`reattach ${sessionId} failed: ${messageOf(error)}`)
+    }
+    return null
   }
 
   private attached(sessionId: string, setup: SessionSetup): void {
