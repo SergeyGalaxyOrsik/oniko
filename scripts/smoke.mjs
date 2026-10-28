@@ -124,7 +124,8 @@ async function subscriptions(page) {
   const seeded = row(page, SUBSCRIPTION_DIRS[0].dir)
   await seeded.locator('[data-account-kind="logged_in"]').waitFor({ timeout: 20_000 })
   assert(true, 'first run seeded ~/.claude as Default and it is logged in despite the bogus inherited CLAUDE_CONFIG_DIR')
-  await seeded.locator('[data-testid="remove-subscription"]').click()
+  await seeded.locator('button[aria-pressed]').click()
+  await page.locator('[data-testid="subscription-editor"] [data-testid="remove-subscription"]').click()
   await page.locator('[data-subscription-id]').first().waitFor({ state: 'detached' })
   assert(true, 'an unused subscription can be removed')
   await page.locator('[data-testid="settings-back"]').click()
@@ -133,11 +134,9 @@ async function subscriptions(page) {
   await openSettings(page)
 
   for (const { typed } of SUBSCRIPTION_DIRS) await addSubscription(page, typed)
-  const emails = []
-  for (const { dir } of SUBSCRIPTION_DIRS) {
-    await row(page, dir).locator('[data-account-kind="logged_in"]').waitFor()
-    emails.push((await row(page, dir).locator('[data-testid="subscription-account"]').innerText()).split(' · ')[0])
-  }
+  for (const { dir } of SUBSCRIPTION_DIRS) await row(page, dir).locator('[data-account-kind="logged_in"]').waitFor()
+  const probed = (await snapshot(page)).subscriptions.subscriptions
+  const emails = SUBSCRIPTION_DIRS.map(({ dir }) => probed.find((s) => s.configDir === dir)?.account.email)
   assert(emails.every(Boolean) && emails[0] !== emails[1], `both subscriptions logged in with different accounts (${emails.join(', ')})`)
   await page.screenshot({ path: shotVariant('settings') })
   console.log(`screenshot: ${shotVariant('settings')}`)

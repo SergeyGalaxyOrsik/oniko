@@ -4,13 +4,15 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { AGENT_IDS } from '@shared/agents'
 import { accountLine, type Subscription } from '@shared/subscriptions'
 import { AccountBadge, LoginHint, shortenHome } from './subscription-ui'
 
 type Phase = { kind: 'editing'; error: string | null } | { kind: 'adding' } | { kind: 'added'; subscription: Subscription }
 
-export function AddSubscriptionDialog({ home, added }: { home: string; added: Subscription[] }) {
+/** `compact` renders the toolbar "+" icon instead of the labelled button. */
+export function AddSubscriptionDialog({ home, added, compact = false }: { home: string; added: Subscription[]; compact?: boolean }) {
   const [open, setOpen] = useState(false)
   const [path, setPath] = useState('')
   const [label, setLabel] = useState('')
@@ -46,12 +48,31 @@ export function AddSubscriptionDialog({ home, added }: { home: string; added: Su
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" data-testid="add-subscription">
-          <Plus />
-          Add subscription
-        </Button>
-      </DialogTrigger>
+      {compact ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Add subscription"
+                data-testid="add-subscription"
+              >
+                <Plus />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top">Add subscription</TooltipContent>
+        </Tooltip>
+      ) : (
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline">
+            <Plus />
+            Add subscription
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md" data-testid="add-subscription-dialog">
         <DialogHeader>
           <DialogTitle>{result ? 'Subscription added' : 'Add a subscription'}</DialogTitle>

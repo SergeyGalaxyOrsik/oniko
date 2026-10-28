@@ -61,6 +61,28 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
   )
 }
 
+/** The exact login command for this config dir, with copy and a re-check once the user ran it. */
+export function LoginCommand({ subscription, className }: { subscription: Subscription; className?: string }) {
+  const checking = subscription.account.kind === 'checking'
+  return (
+    <div className={cn('flex min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2', className)}>
+      <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{subscription.loginCommand}</code>
+      <CopyButton text={subscription.loginCommand} label="Copy login command" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className="text-muted-foreground hover:text-foreground"
+        disabled={checking}
+        onClick={() => void window.oniko.subscriptions.refresh(subscription.id)}
+      >
+        <RefreshCw className={cn(checking && 'animate-spin')} />
+        Refresh
+      </Button>
+    </div>
+  )
+}
+
 /** The app does not run the login flow itself; it shows the exact command for this config dir. */
 export function LoginHint({ subscription, className }: { subscription: Subscription; className?: string }) {
   return (
@@ -68,20 +90,7 @@ export function LoginHint({ subscription, className }: { subscription: Subscript
       <p className="text-amber-900">
         <span className="font-medium">{subscription.label}</span> is logged out. Run this in a terminal, then refresh.
       </p>
-      <div className="mt-2 flex items-center gap-1 rounded-md border bg-background py-1 pr-1 pl-2.5">
-        <code className="min-w-0 flex-1 truncate font-mono text-xs">{subscription.loginCommand}</code>
-        <CopyButton text={subscription.loginCommand} label="Copy login command" />
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          disabled={subscription.account.kind === 'checking'}
-          onClick={() => void window.oniko.subscriptions.refresh(subscription.id)}
-        >
-          <RefreshCw className={cn(subscription.account.kind === 'checking' && 'animate-spin')} />
-          Refresh
-        </Button>
-      </div>
+      <LoginCommand subscription={subscription} className="mt-2 bg-background" />
     </div>
   )
 }
