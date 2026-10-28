@@ -94,11 +94,24 @@ export function registerIpc({ bus, store, subscriptions, tasks, recentFolders, r
     z.tuple([z.object({ project, title: z.string(), description: z.string(), statusId: taskStatusId })]),
     (input) => tasks.create(input),
   )
-  handle(CHANNELS.tasksUpdate, z.tuple([taskId, z.object({ title: z.string().optional(), description: z.string().optional() })]), (id, patch) =>
-    tasks.update(id, {
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.description !== undefined ? { description: patch.description } : {}),
-    }),
+  handle(
+    CHANNELS.tasksUpdate,
+    z.tuple([
+      taskId,
+      z.object({
+        title: z.string().optional(),
+        description: z.string().optional(),
+        subscriptionId: subscriptionId.nullable().optional(),
+        pullRequest: z.boolean().optional(),
+      }),
+    ]),
+    (id, patch) =>
+      tasks.update(id, {
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.subscriptionId !== undefined ? { subscriptionId: patch.subscriptionId } : {}),
+        ...(patch.pullRequest !== undefined ? { pullRequest: patch.pullRequest } : {}),
+      }),
   )
   handle(CHANNELS.tasksMove, z.tuple([taskId, taskStatusId, taskId.nullable()]), (id, statusId, beforeId) => tasks.move(id, statusId, beforeId))
   handle(CHANNELS.tasksRemove, z.tuple([taskId]), (id) => tasks.remove(id))

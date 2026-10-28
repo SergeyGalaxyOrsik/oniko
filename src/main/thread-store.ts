@@ -44,7 +44,8 @@ export class ThreadStore {
     return Object.values(this.threads).sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  create(subscription: Subscription, cwd: string, initialConfig?: Record<string, string>): ThreadId {
+  /** Without a title, the first prompt names the thread. */
+  create(subscription: Subscription, cwd: string, initialConfig?: Record<string, string>, title = ''): ThreadId {
     const id = randomUUID() as ThreadId
     this.dispatch({
       threadId: id,
@@ -54,7 +55,7 @@ export class ThreadStore {
         agentId: subscription.agentId,
         subscriptionId: subscription.id,
         cwd,
-        title: '',
+        title,
         createdAt: Date.now(),
         acpSessionId: null,
         status: { kind: 'connecting' },

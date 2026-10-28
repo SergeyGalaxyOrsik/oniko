@@ -5,6 +5,8 @@ import type { StatusKind, TaskId, TasksState, TaskStatusId } from './tasks'
 import type { Thread, ThreadId } from './thread'
 
 export const EVENT_CHANNEL = 'oniko:event'
+/** Main asks the renderer to show a thread, e.g. after a notification about it is clicked. */
+export const OPEN_THREAD_CHANNEL = 'oniko:openThread'
 
 /**
  * Every broadcast event carries the bus's sequence number, and a snapshot records the last one
@@ -42,7 +44,8 @@ export type OnikoApi = {
     /** Seeds the default statuses for a project that has none yet. */
     open(project: string): Promise<void>
     create(input: { project: string; title: string; description: string; statusId: TaskStatusId }): Promise<TaskId>
-    update(id: TaskId, patch: { title?: string; description?: string }): Promise<void>
+    /** The subscription can only change until the agent has started. */
+    update(id: TaskId, patch: { title?: string; description?: string; subscriptionId?: SubscriptionId | null; pullRequest?: boolean }): Promise<void>
     /** Places the task in `statusId` ahead of `beforeId`, or last when it is null. */
     move(id: TaskId, statusId: TaskStatusId, beforeId: TaskId | null): Promise<void>
     remove(id: TaskId): Promise<void>
@@ -54,6 +57,7 @@ export type OnikoApi = {
   folders: { recent(): Promise<string[]> }
   dialog: { pickFolder(options?: { showHidden?: boolean }): Promise<string | null> }
   onEvent(cb: (event: SequencedEvent) => void): () => void
+  onOpenThread(cb: (id: ThreadId) => void): () => void
 }
 
 /** One table drives both the preload bridge and the ipcMain handlers, so channel names cannot drift. */

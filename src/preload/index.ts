@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { CHANNELS, EVENT_CHANNEL, type OnikoApi, type SequencedEvent } from '@shared/api'
+import { CHANNELS, EVENT_CHANNEL, OPEN_THREAD_CHANNEL, type OnikoApi, type SequencedEvent } from '@shared/api'
+import type { ThreadId } from '@shared/thread'
 
 const call =
   <Args extends unknown[], R>(channel: string) =>
@@ -43,6 +44,11 @@ const api: OnikoApi = {
     const listener = (_event: IpcRendererEvent, event: SequencedEvent) => cb(event)
     ipcRenderer.on(EVENT_CHANNEL, listener)
     return () => ipcRenderer.off(EVENT_CHANNEL, listener)
+  },
+  onOpenThread(cb) {
+    const listener = (_event: IpcRendererEvent, id: ThreadId) => cb(id)
+    ipcRenderer.on(OPEN_THREAD_CHANNEL, listener)
+    return () => ipcRenderer.off(OPEN_THREAD_CHANNEL, listener)
   },
 }
 

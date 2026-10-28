@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { TasksEvent } from '@shared/events'
+import type { SubscriptionId } from '@shared/subscriptions'
 import {
   DEFAULT_STATUSES,
   nextStatusColor,
@@ -9,6 +10,7 @@ import {
   type StatusKind,
   type Task,
   type TaskId,
+  type TaskRun,
   type TasksState,
   type TaskStatus,
   type TaskStatusId,
@@ -18,7 +20,11 @@ import type { ThreadDb } from './db'
 export type TaskStoreDeps = {
   db: ThreadDb
   publish: (event: TasksEvent) => void
+  /** Called after a task lands in a status it was not in before, including the one it is created in. */
+  entered?: (task: Task, status: TaskStatus) => void
 }
+
+export type TaskPatch = { title?: string; description?: string; subscriptionId?: SubscriptionId | null; pullRequest?: boolean }
 
 /** Every project's tasks and statuses; main is authoritative, writes through to the db and broadcasts the whole state. */
 export class TaskStore {
@@ -56,20 +62,39 @@ export class TaskStore {
       position: positionBetween(statusTasks(this.current, status.id).at(-1)?.position, undefined),
       createdAt: now,
       updatedAt: now,
+      subscriptionId: null,
+      pullRequest: false,
+      run: null,
     })
     this.reload()
+    this.deps.entered?.(this.task(id), status)
     return id
   }
 
-  update(id: TaskId, patch: { title?: string; description?: string }): void {
+  update(id: TaskId, patch: TaskPatch): void {
     const task = this.task(id)
+    if (patch.subscriptionId !== undefined && patch.subscriptionId !== task.subscriptionId && task.run && 'threadId' in task.run) {
+      throw new Error('The agent already started on its subscription')
+    }
     this.deps.db.saveTask({
       ...task,
       ...(patch.title !== undefined ? { title: requireTitle(patch.title) } : {}),
       ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
+      ...(patch.subscriptionId !== undefined ? { subscriptionId: patch.subscriptionId } : {}),
+      ...(patch.pullRequest !== undefined ? { pullRequest: patch.pullRequest } : {}),
       updatedAt: Date.now(),
     })
     this.reload()
+  }
+
+  /** Written by the task runner only; not a user edit, so `updatedAt` stays. */
+  setRun(id: TaskId, run: TaskRun | null): void {
+    this.deps.db.saveTask({ ...this.task(id), run })
+    this.reload()
+  }
+
+  get(id: TaskId): Task | undefined {
+    return this.current.tasks.find((t) => t.id === id)
   }
 
   /** Puts the task into `statusId` just ahead of `beforeId`, or last when there is none. */
@@ -84,6 +109,7 @@ export class TaskStore {
     if (task.statusId === statusId && task.position === position) return
     this.deps.db.saveTask({ ...task, statusId, position, updatedAt: Date.now() })
     this.reload()
+    if (task.statusId !== statusId) this.deps.entered?.(this.task(id), status)
   }
 
   remove(id: TaskId): void {

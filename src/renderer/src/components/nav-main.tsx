@@ -20,7 +20,7 @@ import { basename, relativeTime } from "@/app/format"
 import { useNow } from "@/app/use-now"
 import { cn } from "@/lib/utils"
 import type { SubscriptionsState } from "@shared/subscriptions"
-import { taskProjects, type TasksState } from "@shared/tasks"
+import { taskProjects, threadProject, type TasksState } from "@shared/tasks"
 import type { Thread, ThreadId, ThreadStatus } from "@shared/thread"
 
 const DOT: Partial<Record<ThreadStatus["kind"], string>> = {
@@ -53,7 +53,10 @@ export function NavMain({
   const labels =
     subscriptions.subscriptions.length > 1 ? new Map(subscriptions.subscriptions.map((s) => [s.id, s.label])) : null
   const projects = new Map<string, Thread[]>()
-  for (const thread of threads) projects.set(thread.cwd, [...(projects.get(thread.cwd) ?? []), thread])
+  for (const thread of threads) {
+    const project = threadProject(tasks, thread)
+    projects.set(project, [...(projects.get(project) ?? []), thread])
+  }
   // A project whose threads are all gone still has its board.
   for (const project of taskProjects(tasks)) if (!projects.has(project)) projects.set(project, [])
 

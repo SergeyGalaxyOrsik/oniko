@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import type { SubscriptionsState } from '@shared/subscriptions'
+import type { ThreadId, ThreadMap } from '@shared/thread'
 import {
   projectStatuses,
   projectTasks,
@@ -250,12 +252,14 @@ function ListView({ project, state, statuses, onOpen, onNew }: ViewProps) {
     })
 
   return (
-    <div className="px-2 py-2" data-testid="tasks-list">
+    // One grid for the whole list, rows as subgrids: the key column is as wide as the longest key in any
+    // group, and rows start where the header's status icon does, as in Linear.
+    <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] gap-x-3 px-2 py-2" data-testid="tasks-list">
       {statuses.map((status) => {
         const tasks = statusTasks(state, status.id)
         const open = !collapsed.has(status.id)
         return (
-          <section key={status.id} data-status-section={status.name} className="mb-0.5">
+          <section key={status.id} data-status-section={status.name} className="col-span-full mb-0.5 grid grid-cols-subgrid">
             <div
               data-status-header={status.name}
               role="button"
@@ -263,7 +267,7 @@ function ListView({ project, state, statuses, onOpen, onNew }: ViewProps) {
               aria-expanded={open}
               onClick={() => toggle(status.id)}
               onKeyDown={openOnKey(() => toggle(status.id))}
-              className="group/header flex h-9 cursor-default items-center gap-2 rounded-md bg-muted/70 pr-1.5 pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/header col-span-full flex h-9 cursor-default items-center gap-2 rounded-md bg-muted/70 pr-1.5 pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ChevronRight className={cn('size-3 text-muted-foreground transition-transform', open && 'rotate-90')} />
               <StatusIcon status={status} statuses={statuses} />
@@ -277,7 +281,7 @@ function ListView({ project, state, statuses, onOpen, onNew }: ViewProps) {
               </span>
             </div>
             {open ? (
-              <ul>
+              <ul className="col-span-full grid grid-cols-subgrid">
                 {tasks.map((task) => (
                   <li
                     key={task.id}
@@ -286,9 +290,9 @@ function ListView({ project, state, statuses, onOpen, onNew }: ViewProps) {
                     tabIndex={0}
                     onClick={() => onOpen(task.id)}
                     onKeyDown={openOnKey(() => onOpen(task.id))}
-                    className="flex h-11 cursor-default items-center gap-3 rounded-md px-3 text-[13px] outline-none hover:bg-accent/60 focus-visible:bg-accent/60"
+                    className="col-span-full grid h-11 cursor-default grid-cols-subgrid items-center rounded-md pr-3 pl-7 text-[13px] outline-none hover:bg-accent/60 focus-visible:bg-accent/60"
                   >
-                    <span className="w-14 shrink-0 tabular-nums text-muted-foreground">{taskKey(task)}</span>
+                    <span className="tabular-nums whitespace-nowrap text-muted-foreground">{taskKey(task)}</span>
                     <StatusMenu statuses={statuses} value={task.statusId} onChange={(id) => void window.oniko.tasks.move(task.id, id, null)}>
                       <button
                         type="button"
@@ -300,9 +304,11 @@ function ListView({ project, state, statuses, onOpen, onNew }: ViewProps) {
                         <StatusIcon status={status} statuses={statuses} />
                       </button>
                     </StatusMenu>
-                    <span className="min-w-0 truncate font-medium">{task.title}</span>
-                    {task.description ? <span className="hidden min-w-0 flex-1 truncate text-muted-foreground lg:block">{task.description.split('\n')[0]}</span> : <span className="flex-1" />}
-                    <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{shortDate(task.createdAt)}</span>
+                    <span className="flex min-w-0 items-baseline gap-3">
+                      <span className="min-w-0 truncate font-medium">{task.title}</span>
+                      {task.description ? <span className="hidden min-w-0 truncate text-muted-foreground lg:block">{task.description.split('\n')[0]}</span> : null}
+                    </span>
+                    <span className="text-right text-xs tabular-nums whitespace-nowrap text-muted-foreground">{shortDate(task.createdAt)}</span>
                   </li>
                 ))}
               </ul>
@@ -310,7 +316,7 @@ function ListView({ project, state, statuses, onOpen, onNew }: ViewProps) {
           </section>
         )
       })}
-      <AddStatus project={project} className="mt-1" />
+      <AddStatus project={project} className="col-span-full mt-1 pl-2" />
     </div>
   )
 }
@@ -436,12 +442,20 @@ export function TasksView({
   project,
   state,
   taskId,
+  subscriptions,
+  threads,
+  home,
   onOpenTask,
+  onOpenThread,
 }: {
   project: string
   state: TasksState
   taskId: TaskId | null
+  subscriptions: SubscriptionsState
+  threads: ThreadMap
+  home: string
   onOpenTask: (id: TaskId | null) => void
+  onOpenThread: (id: ThreadId) => void
 }) {
   const [layout, setLayout] = useLayout()
   const [newIn, setNewIn] = useState<TaskStatusId | null>(null)
@@ -458,7 +472,19 @@ export function TasksView({
     if (taskId && !task && state.statuses.length) onOpenTask(null)
   }, [taskId, task, state.statuses.length, onOpenTask])
 
-  if (task) return <TaskPage key={task.id} task={task} statuses={statuses} onBack={() => onOpenTask(null)} />
+  if (task)
+    return (
+      <TaskPage
+        key={task.id}
+        task={task}
+        statuses={statuses}
+        subscriptions={subscriptions}
+        threads={threads}
+        home={home}
+        onBack={() => onOpenTask(null)}
+        onOpenThread={onOpenThread}
+      />
+    )
 
   const first = statuses[0]
   return (

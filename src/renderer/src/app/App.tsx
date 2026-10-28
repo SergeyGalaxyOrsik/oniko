@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { AGENTS } from '@shared/agents'
 import { newThreadConfig, withValue } from '@shared/config'
 import { activeSubscription, type Subscription, type SubscriptionsState } from '@shared/subscriptions'
-import { projectTasks, taskKey, type TaskId, type TasksState } from '@shared/tasks'
+import { projectTasks, taskKey, threadProject, type TaskId, type TasksState } from '@shared/tasks'
 import { AgentGlyph } from './agent-glyph'
 import { isBusy, type Thread, type ThreadId } from '@shared/thread'
 import { AuthCard } from './auth-card'
@@ -236,7 +236,7 @@ function InsetHeader({
             </>
           ) : thread ? (
             <>
-              <BreadcrumbItem>{basename(thread.cwd)}</BreadcrumbItem>
+              <BreadcrumbItem>{basename(threadProject(tasks, thread))}</BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem className="min-w-0">
                 <BreadcrumbPage data-testid="thread-title" className="truncate">
@@ -278,6 +278,9 @@ export function App() {
   const openSettings = useCallback(() => setView((v) => (v.kind === 'settings' ? v : { kind: 'settings', back: v })), [])
   const closeSettings = useCallback(() => setView((v) => (v.kind === 'settings' ? v.back : v)), [])
 
+  // A clicked notification about a task's agent opens its thread.
+  useEffect(() => window.oniko.onOpenThread(selectThread), [selectThread])
+
   useEffect(() => {
     if (view.kind !== 'settings') return
     const onKey = (e: KeyboardEvent) => {
@@ -308,7 +311,17 @@ export function App() {
         {view.kind === 'settings' ? (
           <SettingsView state={subscriptions} threads={list} home={home} />
         ) : view.kind === 'tasks' ? (
-          <TasksView key={view.project} project={view.project} state={tasks} taskId={view.taskId} onOpenTask={(id) => openTask(view.project, id)} />
+          <TasksView
+            key={view.project}
+            project={view.project}
+            state={tasks}
+            taskId={view.taskId}
+            subscriptions={subscriptions}
+            threads={threads}
+            home={home}
+            onOpenTask={(id) => openTask(view.project, id)}
+            onOpenThread={selectThread}
+          />
         ) : selected ? (
           <ThreadView key={selected.id} thread={selected} subscriptions={subscriptions} />
         ) : (

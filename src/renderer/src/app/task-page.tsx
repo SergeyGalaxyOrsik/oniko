@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { CircleDot, PenLine, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, FolderGit2, GitBranch, GitPullRequest, Loader2, Lock, MessageSquare, PenLine, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { taskKey, type Task, type TaskStatus } from '@shared/tasks'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+import { activeSubscription, type SubscriptionsState } from '@shared/subscriptions'
+import { taskKey, taskThreadId, type Task, type TaskRun, type TaskStatus } from '@shared/tasks'
+import type { ThreadId, ThreadMap } from '@shared/thread'
+import { AgentGlyph } from './agent-glyph'
 import { relativeTime } from './format'
+import { shortenHome } from './subscription-ui'
+import { SubscriptionMenuItems } from './subscription-picker'
 import { StatusIcon, StatusMenu } from './task-status'
 import { useNow } from './use-now'
 
@@ -47,8 +55,136 @@ function Property({ label, children }: { label: string; children: React.ReactNod
   )
 }
 
+/** Before the agent starts the choice is open, and "active" follows whatever new threads start on. */
+function SubscriptionProperty({ task, subscriptions, threads }: { task: Task; subscriptions: SubscriptionsState; threads: ThreadMap }) {
+  const threadId = taskThreadId(task)
+  const assigned = task.subscriptionId ? subscriptions.subscriptions.find((s) => s.id === task.subscriptionId) : undefined
+  const running = threadId ? subscriptions.subscriptions.find((s) => s.id === threads[threadId]?.subscriptionId) : undefined
+  const active = activeSubscription(subscriptions)
+  const shown = running ?? assigned ?? active
+  const label = (
+    <>
+      {shown ? <AgentGlyph agentId={shown.agentId} /> : null}
+      <span className="min-w-0 truncate">{shown?.label ?? 'No subscription'}</span>
+      {!threadId && !assigned && shown ? <span className="text-muted-foreground">· active</span> : null}
+    </>
+  )
+  const row = 'w-full justify-start gap-2.5 px-2 font-normal'
+  if (threadId) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={cn(row, 'flex h-8 items-center text-sm')} data-testid="task-subscription">
+            {label}
+            <Lock className="ml-auto size-3 text-muted-foreground" />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>The agent stays on the subscription it started with</TooltipContent>
+      </Tooltip>
+    )
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className={row} data-testid="task-subscription">
+          {label}
+          <ChevronDown className="ml-auto size-3 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuItem onSelect={() => void window.oniko.tasks.update(task.id, { subscriptionId: null })} className="gap-2" data-subscription-option="active">
+          <span className="flex-1">Active subscription{active ? ` (${active.label})` : ''}</span>
+          {task.subscriptionId === null ? <Check className="size-4" /> : <span className="size-4" />}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <SubscriptionMenuItems
+          subscriptions={subscriptions.subscriptions}
+          activeId={task.subscriptionId}
+          onSelect={(id) => void window.oniko.tasks.update(task.id, { subscriptionId: id })}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+const STAGE_LABELS: Record<Extract<TaskRun, { threadId: ThreadId }>['stage'], string> = {
+  working: 'Working on it',
+  pull_request: 'Opening a pull request',
+  finished: 'Finished',
+}
+
+/** Where the task's agent is: how to start it, what went wrong, or its thread, branch and worktree. */
+function AgentProperty({
+  task,
+  statuses,
+  threads,
+  home,
+  onOpenThread,
+}: {
+  task: Task
+  statuses: TaskStatus[]
+  threads: ThreadMap
+  home: string
+  onOpenThread: (id: ThreadId) => void
+}) {
+  const run = task.run
+  const hint = 'px-2 text-xs leading-relaxed text-muted-foreground'
+  const queue = statuses.find((s) => s.kind === 'unstarted')?.name ?? 'a Not started status'
+  if (!run) return <p className={hint}>Move the task to {queue} to start an agent on it in its own worktree.</p>
+  if (run.stage === 'starting')
+    return (
+      <p className={cn(hint, 'flex items-center gap-2')}>
+        <Loader2 className="size-3.5 animate-spin" />
+        Creating the worktree…
+      </p>
+    )
+  if (run.stage === 'failed')
+    return (
+      <div className="space-y-1 px-2 text-xs leading-relaxed" data-testid="task-run-error">
+        <p className="text-destructive">{run.error}</p>
+        <p className="text-muted-foreground">Move the task to {queue} again to retry.</p>
+      </div>
+    )
+  const status = threads[run.threadId]?.status
+  const stage =
+    status?.kind === 'awaiting_permission' ? 'Needs your approval' : status?.kind === 'running' && run.stage === 'finished' ? 'Working on it' : STAGE_LABELS[run.stage]
+  return (
+    <div className="space-y-1">
+      <Button variant="ghost" size="sm" className="w-full justify-start gap-2.5 px-2 font-normal" onClick={() => onOpenThread(run.threadId)} data-testid="task-open-thread">
+        <MessageSquare />
+        <span className="min-w-0 truncate">{stage}</span>
+        {status?.kind === 'running' ? <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" /> : null}
+      </Button>
+      <p className="flex items-center gap-2.5 px-2 py-1 text-xs text-muted-foreground" title={run.branch}>
+        <GitBranch className="size-4 shrink-0" />
+        <span className="min-w-0 truncate font-mono">{run.branch}</span>
+      </p>
+      <p className="flex items-center gap-2.5 px-2 py-1 text-xs text-muted-foreground" title={run.worktree}>
+        <FolderGit2 className="size-4 shrink-0" />
+        <span className="min-w-0 truncate font-mono">{shortenHome(run.worktree, home)}</span>
+      </p>
+    </div>
+  )
+}
+
 /** One task, opened full-size: editable title and description, properties on the right. Esc goes back. */
-export function TaskPage({ task, statuses, onBack }: { task: Task; statuses: TaskStatus[]; onBack: () => void }) {
+export function TaskPage({
+  task,
+  statuses,
+  subscriptions,
+  threads,
+  home,
+  onBack,
+  onOpenThread,
+}: {
+  task: Task
+  statuses: TaskStatus[]
+  subscriptions: SubscriptionsState
+  threads: ThreadMap
+  home: string
+  onBack: () => void
+  onOpenThread: (id: ThreadId) => void
+}) {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
   const [statusOpen, setStatusOpen] = useState(false)
@@ -89,9 +225,10 @@ export function TaskPage({ task, statuses, onBack }: { task: Task; statuses: Tas
   }, [onBack])
 
   return (
-    <div className="flex min-h-0 flex-1" data-testid="task-page" data-task-key={taskKey(task)}>
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-10 py-12">
+    <div className="min-h-0 flex-1 overflow-y-auto" data-testid="task-page" data-task-key={taskKey(task)}>
+      {/* One scroll for both columns, no divider: the properties sit beside the content, as in Linear. */}
+      <div className="mx-auto flex w-full max-w-6xl items-start gap-12 px-10 py-12">
+        <div className="min-w-0 flex-1">
           <textarea
             ref={titleRef}
             value={title}
@@ -144,8 +281,7 @@ export function TaskPage({ task, statuses, onBack }: { task: Task; statuses: Tas
             </ul>
           </div>
         </div>
-      </div>
-      <aside className="w-72 shrink-0 space-y-6 overflow-y-auto border-l px-4 py-8">
+        <aside className="sticky top-12 w-64 shrink-0 space-y-6 pt-1">
         <Property label="Properties">
           {status ? (
             <StatusMenu
@@ -161,6 +297,24 @@ export function TaskPage({ task, statuses, onBack }: { task: Task; statuses: Tas
               </Button>
             </StatusMenu>
           ) : null}
+          <SubscriptionProperty task={task} subscriptions={subscriptions} threads={threads} />
+          <Button
+            variant="ghost"
+            size="sm"
+            role="switch"
+            aria-checked={task.pullRequest}
+            disabled={task.run?.stage === 'pull_request' || task.run?.stage === 'finished'}
+            className="w-full justify-start gap-2.5 px-2 font-normal"
+            onClick={() => void window.oniko.tasks.update(task.id, { pullRequest: !task.pullRequest })}
+            data-testid="task-pull-request"
+          >
+            <GitPullRequest className={cn(!task.pullRequest && 'text-muted-foreground')} />
+            <span className={cn(!task.pullRequest && 'text-muted-foreground')}>Open a pull request</span>
+            {task.pullRequest ? <Check className="ml-auto" /> : null}
+          </Button>
+        </Property>
+        <Property label="Agent">
+          <AgentProperty task={task} statuses={statuses} threads={threads} home={home} onOpenThread={onOpenThread} />
         </Property>
         <Property label="Task">
           <p className="px-2 font-mono text-xs text-muted-foreground">{taskKey(task)}</p>
@@ -178,7 +332,8 @@ export function TaskPage({ task, statuses, onBack }: { task: Task; statuses: Tas
           <Trash2 />
           Delete task
         </Button>
-      </aside>
+        </aside>
+      </div>
     </div>
   )
 }
