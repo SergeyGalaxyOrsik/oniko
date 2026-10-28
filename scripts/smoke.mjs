@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import electronPath from 'electron'
@@ -13,6 +13,9 @@ const shotVariant = (suffix) => shot.replace(/\.png$/, `-${suffix}.png`)
 mkdirSync(dirname(shot), { recursive: true })
 
 const TURN_TIMEOUT = 90_000
+// Set on purpose: if the app inherited it, every session and login probe would point at a dir that does not exist.
+const BOGUS_CONFIG_DIR = join(tmpdir(), 'oniko-smoke-bogus-claude-config-dir')
+const SUBSCRIPTION_DIRS = [{ typed: '~/.claude', dir: join(homedir(), '.claude') }, { typed: '~/.claude-personal/', dir: join(homedir(), '.claude-personal') }]
 let app
 
 function assert(ok, message) {
@@ -25,7 +28,7 @@ async function launch() {
     executablePath: electronPath,
     args: [root],
     cwd: root,
-    env: { ...process.env, ONIKO_USER_DATA: userData, ONIKO_SMOKE_CWD: cwd },
+    env: { ...process.env, ONIKO_USER_DATA: userData, ONIKO_SMOKE_CWD: cwd, CLAUDE_CONFIG_DIR: BOGUS_CONFIG_DIR },
   })
   const page = await app.firstWindow()
   await page.setViewportSize({ width: 1280, height: 840 })
@@ -54,7 +57,115 @@ async function lastAssistantText(page) {
   return (await page.locator('[data-item-kind="assistant"]').last().innerText()).trim()
 }
 
+const snapshot = (page) => page.evaluate(() => window.oniko.snapshot())
+
+/** Read-only: the transcript the adapter wrote for this session, if it is under this config dir. */
+function sessionFile(configDir, sessionId) {
+  const projects = join(configDir, 'projects')
+  if (!existsSync(projects)) return null
+  for (const project of readdirSync(projects)) {
+    const file = join(projects, project, `${sessionId}.jsonl`)
+    if (existsSync(file)) return file
+  }
+  return null
+}
+
+const row = (page, dir) => page.locator(`[data-config-dir="${dir}"]`)
+
+async function openSettings(page) {
+  await page.locator('[data-testid="open-settings"]').click()
+  await page.waitForSelector('[data-testid="settings-view"]')
+}
+
+async function addSubscription(page, typed) {
+  await page.locator('[data-testid="add-subscription"]').click()
+  await page.locator('#subscription-path').fill(typed)
+  await page.locator('[data-testid="add-subscription-submit"]').click()
+  await page.locator('[data-testid="added-subscription"] [data-account-kind="logged_in"]').waitFor({ timeout: 20_000 })
+  assert(true, `added ${typed} through the dialog and it probed as logged in`)
+  await page.locator('[data-testid="add-subscription-done"]').click()
+  await page.locator('[data-testid="add-subscription-dialog"]').waitFor({ state: 'detached' })
+}
+
+async function switchTo(page, subscriptionId) {
+  await page.locator('[data-testid="subscription-switcher"]').click()
+  await page.locator(`[data-subscription-option="${subscriptionId}"]`).click()
+  await page.waitForFunction((id) => window.oniko.snapshot().then((s) => s.subscriptions.activeSubscriptionId === id), subscriptionId)
+}
+
+async function newestThread(page) {
+  const { threads } = await snapshot(page)
+  return threads[0]
+}
+
+async function promptOn(page, sub, text) {
+  await switchTo(page, sub.id)
+  await newThread(page)
+  await page.locator('[data-testid="composer-subscription"]', { hasText: sub.label }).waitFor()
+  await send(page, text)
+  await waitForTurnEnd(page, 0)
+  const thread = await newestThread(page)
+  assert(thread.subscriptionId === sub.id && thread.acpSessionId, `thread "${text}" started on ${sub.label}`)
+  await page.locator('[data-testid="thread-subscription"]', { hasText: sub.label }).waitFor()
+  assert(true, `thread header shows its subscription ${sub.label}`)
+  return thread
+}
+
+function assertSessionUnder(sub, thread, others) {
+  const file = sessionFile(sub.configDir, thread.acpSessionId)
+  assert(file !== null, `session ${thread.acpSessionId} is stored under ${sub.configDir}`)
+  for (const other of others) assert(sessionFile(other.configDir, thread.acpSessionId) === null, `and not under ${other.configDir}`)
+  return file
+}
+
+/** Adds ~/.claude and ~/.claude-personal by typing them, then runs one turn on each. Returns both subscriptions. */
+async function subscriptions(page) {
+  await openSettings(page)
+  const seeded = row(page, SUBSCRIPTION_DIRS[0].dir)
+  await seeded.locator('[data-account-kind="logged_in"]').waitFor({ timeout: 20_000 })
+  assert(true, 'first run seeded ~/.claude as Default and it is logged in despite the bogus inherited CLAUDE_CONFIG_DIR')
+  await seeded.locator('[data-testid="remove-subscription"]').click()
+  await page.locator('[data-subscription-id]').first().waitFor({ state: 'detached' })
+  assert(true, 'an unused subscription can be removed')
+  await page.locator('[data-testid="settings-back"]').click()
+  await page.locator('[data-testid="no-subscription"]').waitFor()
+  assert(true, 'without a subscription the new-thread composer asks for one')
+  await openSettings(page)
+
+  for (const { typed } of SUBSCRIPTION_DIRS) await addSubscription(page, typed)
+  const emails = []
+  for (const { dir } of SUBSCRIPTION_DIRS) {
+    await row(page, dir).locator('[data-account-kind="logged_in"]').waitFor()
+    emails.push((await row(page, dir).locator('[data-testid="subscription-account"]').innerText()).split(' · ')[0])
+  }
+  assert(emails.every(Boolean) && emails[0] !== emails[1], `both subscriptions logged in with different accounts (${emails.join(', ')})`)
+  await page.screenshot({ path: shotVariant('settings') })
+  console.log(`screenshot: ${shotVariant('settings')}`)
+  await page.locator('[data-testid="subscription-switcher"]').click()
+  await page.locator('[data-testid="subscription-switcher-menu"]').waitFor()
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: shotVariant('switcher') })
+  console.log(`screenshot: ${shotVariant('switcher')}`)
+  await page.keyboard.press('Escape')
+  await page.locator('[data-testid="subscription-switcher-menu"]').waitFor({ state: 'detached' })
+  await page.keyboard.press('Escape')
+  await page.locator('[data-testid="settings-view"]').waitFor({ state: 'detached' })
+  assert(true, 'Esc leaves Settings')
+
+  const state = (await snapshot(page)).subscriptions.subscriptions
+  const [work, personal] = SUBSCRIPTION_DIRS.map(({ dir }) => state.find((s) => s.configDir === dir))
+  for (const [sub, other] of [
+    [work, personal],
+    [personal, work],
+  ]) {
+    const thread = await promptOn(page, sub, `Reply with exactly: hello from ${sub.label}`)
+    assertSessionUnder(sub, thread, [other])
+  }
+  return { work, personal }
+}
+
 async function pong(page) {
+  await newThread(page)
   await send(page, 'Reply with exactly: pong')
   await page.locator('[data-item-kind="assistant"]', { hasText: 'pong' }).first().waitFor({ timeout: TURN_TIMEOUT })
   assert(true, 'assistant replied with pong')
@@ -90,11 +201,11 @@ async function approveShellCommand(page) {
   await page.screenshot({ path: shotVariant('tool') })
 }
 
-async function rememberAcrossRestart(page) {
-  await newThread(page)
-  await send(page, 'Remember the word zephyr. Reply ok.')
-  await waitForTurnEnd(page, 0)
+/** The zephyr thread runs on `own`, then `other` is made active before quitting, so the resume must not follow the active one. */
+async function rememberAcrossRestart(page, own, other) {
+  const thread = await promptOn(page, own, 'Remember the word zephyr. Reply ok.')
   assert(true, 'zephyr turn finished before quitting')
+  await switchTo(page, other.id)
   await app.close()
 
   const relaunched = await launch()
@@ -113,15 +224,22 @@ async function rememberAcrossRestart(page) {
     (await relaunched.locator('[data-item-kind="notice"]', { hasText: 'fresh agent session' }).count()) === 0,
     'no fresh-session fallback notice',
   )
+  const after = (await snapshot(relaunched)).threads.find((t) => t.id === thread.id)
+  assert(after.subscriptionId === own.id && after.acpSessionId === thread.acpSessionId, 'thread kept its subscription and session across restart')
+  assert((await snapshot(relaunched)).subscriptions.activeSubscriptionId === other.id, 'active subscription persisted across restart')
+  await relaunched.locator('[data-testid="thread-subscription"]', { hasText: own.label }).waitFor()
+  const file = assertSessionUnder(own, after, [other])
+  assert(readFileSync(file, 'utf8').includes('What word did I ask you to remember'), `resumed turn was written to ${own.label}'s transcript`)
   await relaunched.screenshot({ path: shotVariant('resume') })
 }
 
 try {
   console.log(`project: ${cwd}\nuserData: ${userData}`)
   const page = await launch()
+  const { work, personal } = await subscriptions(page)
   await pong(page)
   await approveShellCommand(page)
-  await rememberAcrossRestart(page)
+  await rememberAcrossRestart(page, work, personal)
   console.log('smoke: all cases passed')
 } catch (error) {
   console.error(error)
